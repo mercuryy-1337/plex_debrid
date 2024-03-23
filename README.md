@@ -240,7 +240,7 @@ If github is not your cup of tea;
 >  1. Open a terminal inside the downloaded plex_debrid-main folder. Run `pip install -r requirements.txt` - if you dont have pip yet, install it from https://pypi.org/project/pip/
 >  2. Start the script by running `python ./main.py`
 >  3. The script will guide you through the initial setup and the next steps. When setting up plex_debrid, you will be prompted to choose the 5 main services that this script connects:
->  4. Pick and setup at least one [**content service**](https://github.com/itsToggle/plex_debrid#tv-content-services) which plex_debrid should monitor for new content
+>  4. Pick and setup at least one [**content service**](https://github.com/mercuryy-1337/plex_debrid#tv-content-services) which plex_debrid should monitor for new content
 >  5. Pick and setup a [**library collection service**](https://github.com/itsToggle/plex_debrid#open_file_folder-library-collection-service), which plex_debrid will use to determine your current media collection. If you intend to run a plex server, choose "Plex Libraries".
 >  6. Pick and setup a [**library update service**](https://github.com/itsToggle/plex_debrid#-library-update-services), which plex_debrid will update/refresh after a successful download. If you intent to run a plex server, choose "Plex Libraries".
 >  7. Pick and setup a [**library ignore service**](https://github.com/itsToggle/plex_debrid#eyes-library-ignore-services), which plex_debrid will use to ignore content. If you intent to run a plex server, choose "Plex Discover Watch Status".
@@ -306,7 +306,7 @@ If github is not your cup of tea;
 >  
 >  - The Plex Watchlist and the Discover feature are only available for accounts that are linked to an email address - so no managed accounts.
 >  - To allow content download from inside any plex client by yourself and other users, create a new user by navigation to '/Settings/Content Services/Plex/Plex users/Edit/Add user'.
->  - To be notified when a user adds content to their Plex Watchlist, you can now enable Discord notifications using webhooks. Create a Discord Webhook (instructions [here](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks/)) Then, Configure the webhook URL in the settings of your Plex script by navigating to '/Settings/Content Services/Plex/Discord Webhook/Edit'
+>  - To be notified when a user adds content to their Plex Watchlist, you can now enable Discord notifications using webhooks. Create a Discord Webhook (instructions [here](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks/)) then Configure the webhook URL in the settings of your Plex script by navigating to '/Settings/Content Services/Plex/Discord Webhook/Edit'
 >  - You and the users you've added can now browse the Discover part of Plex and download content by adding it to the Plex Watchlist.
 >  - If you want to delete something from your Plex server, make sure that you've removed it from your Watchlist first. Otherwise the script will see that its in your watchlist and not on your server and will simply download it again.
 >  - By default, movies that you add to your Plex Watchlist are removed automatically once they are downloaded and shows stay in the Watchlist, because only shows that are in the Watchlist are monitored for newly released episodes. You can change which media type/s should be automatically removed from your watchlist by navigating to '/Settings/Content Services/Plex/Plex auto remove'
