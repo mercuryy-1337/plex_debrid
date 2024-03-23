@@ -1,11 +1,13 @@
 #import modules
 from base import *
 #import parent modules
+import requests
 from content import classes
 from ui.ui_print import *
 
 name = 'Plex'
 session = requests.Session()
+discord_webhook = ""
 users = []
 headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
 current_library = []
@@ -57,8 +59,8 @@ def setEID(self):
 
 class watchlist(classes.watchlist):
     autoremove = "movie"
-
     def __init__(self) -> None:
+        self.discord_webhook = discord_webhook
         if len(users) > 0:
             ui_print('[plex] getting all watchlists ...')
         self.data = []
@@ -117,7 +119,13 @@ class watchlist(classes.watchlist):
                     ui_print('[plex] error: item "' + item.title + '" couldnt be removed from ' + user[0] + '`s watchlist')
                 if not self == []:
                     self.data.remove(item)
-
+    def send_dc_notification(self, message):
+        if self.discord_webhook:
+            response = requests.post(self.discord_webhook, json=message)
+            ui_print("Discord Notification sent.")
+            if response.status_code not in [200, 201, 204]:
+                ui_print("Error sending discord notification. Please double-check that the Discord webhook URL you've entered is accurate and complete to ensure proper functionality.")
+    
     def add(self, item, user):
         ui_print('[plex] item: "' + item.title + '" added to ' + user[0] + '`s watchlist')
         url = 'https://metadata.provider.plex.tv/actions/addToWatchlist?ratingKey=' + item.ratingKey + '&X-Plex-Token=' + \
@@ -140,7 +148,12 @@ class watchlist(classes.watchlist):
                         for entry in response.MediaContainer.Metadata:
                             entry.user = [user]
                             if not entry in self.data:
+                                #message = '[plex] item: "' + entry.title + '" found in ' + user[0] + '`s watchlist'
+                                message = {
+                                    "content": f"[plex] item: **{entry.title}** found in **{user[0]}**'s watchlist"
+                                }
                                 ui_print('[plex] item: "' + entry.title + '" found in ' + user[0] + '`s watchlist')
+                                self.send_dc_notification(message)
                                 update = True
                                 if entry.type == 'show':
                                     self.data += [show(entry)]

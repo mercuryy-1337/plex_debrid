@@ -319,6 +319,8 @@ settings_list = [
                 'Please choose which media type/s should be removed from your watchlist after successful download ("movie","show","both" or "none"): ',
                 content.services.plex.watchlist, 'autoremove', hidden=True,
                 help='By default, movies are removed from your watchlist after a successful download. In this setting you can choose to automatically remove shows, shows and movies or nothing.'),
+        setting('Discord Webhook', 'Please enter your Discord Webhook URL (optional, Press Enter to skip): ', content.services.plex , 'discord_webhook',
+            help='Enter a valid Discord webhook URL to receive notifications of new downloads', hidden=True), 
         setting('Trakt users', ['Please provide a name for this Trakt user: ',
                                 'Please open your favorite browser, log into this Trakt user and open "https://trakt.tv/activate". Enter this code: '],
                 content.services.trakt, 'users', entry="user", oauth=True, hidden=True),
