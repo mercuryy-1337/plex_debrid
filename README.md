@@ -43,6 +43,7 @@ This is a work in progress, and im not a professional programmer. shits not read
    - <img src="https://app.plex.tv/desktop/favicon.ico" height="16"> **[Plex Library](https://plex.tv/)**
    - <img src="https://walter.trakt.tv/hotlink-ok/public/favicon.ico" height="16"> **[Trakt Collection](https://trakt.tv/)**
 - Determining precise release dates and times, checking for early releases of movies
+- Discord Integration for plex watchlists
 - Scraping Releases from:
    - <img src="https://i.ibb.co/w4BnkC9/GwxAcDV.png" height="16"> **[Torrentio](https://torrentio.strem.fun/configure)**
    - <img src="https://user-images.githubusercontent.com/27040483/28728094-99f3e3f6-73c7-11e7-8f8d-28912dc6ac0d.png" height="16"> **[Jackett](https://github.com/Jackett/Jackett)**
@@ -305,6 +306,8 @@ If github is not your cup of tea;
 >  
 >  - The Plex Watchlist and the Discover feature are only available for accounts that are linked to an email address - so no managed accounts.
 >  - To allow content download from inside any plex client by yourself and other users, create a new user by navigation to '/Settings/Content Services/Plex/Plex users/Edit/Add user'.
+>  - To be notified when a user adds content to their Plex Watchlist, you can now enable Discord notifications using webhooks. Create a Discord Webhook ([instructions here](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks))
+Then, Configure the webhook URL in the settings of your Plex script by navigating to '/Settings/Content Services/Plex/Discord Webhook/Edit'
 >  - You and the users you've added can now browse the Discover part of Plex and download content by adding it to the Plex Watchlist.
 >  - If you want to delete something from your Plex server, make sure that you've removed it from your Watchlist first. Otherwise the script will see that its in your watchlist and not on your server and will simply download it again.
 >  - By default, movies that you add to your Plex Watchlist are removed automatically once they are downloaded and shows stay in the Watchlist, because only shows that are in the Watchlist are monitored for newly released episodes. You can change which media type/s should be automatically removed from your watchlist by navigating to '/Settings/Content Services/Plex/Plex auto remove'
