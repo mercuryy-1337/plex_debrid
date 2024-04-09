@@ -159,9 +159,7 @@ def get(url):
 def post(url, data):
     try:
         response = session.post(url, headers={
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36',
-            'Content-type': "application/json", "trakt-api-key": client_id, "trakt-api-version": "2",
-            "Authorization": "Bearer " + current_user[1]}, data=data)
+            'Content-type': "application/json"}, data=data)
         logerror(response)
         response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
         time.sleep(1.1)
