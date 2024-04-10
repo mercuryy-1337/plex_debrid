@@ -180,7 +180,7 @@ If github is not your cup of tea;
 ></details>
 >
 ><details>
->  <summary><b><u><img src="https://cdn.debrid-link.com/favicon.ico?i=2" height="16"> Mounting DebridLink</u></b></summary>
+>  <summary><b><u><img src="https://cdn.debrid-link.com/favicon.ico?i=2" height="15"> Mounting DebridLink</u></b></summary>
 >  
 >  1. Install the official rclone software: https://github.com/rclone/rclone or my fork: https://github.com/itsToggle/rclone_rd
 >  2. configure rclone by running the command 'rclone config' (could be './rclone config' depending on your os)
