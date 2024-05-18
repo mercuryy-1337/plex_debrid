@@ -245,7 +245,7 @@ class requests(classes.watchlist):
         if len(users) > 0 and len(api_key) > 0:
             ui_print('[overseerr] getting all overseerr requests ...')
             try:
-                response = get(base_url + '/api/v1/request?take=10000')
+                response = get(base_url + '/api/v1/request?take=10000&filter=approved')
                 for element in response.results:
                     if not element in self.data and (element.requestedBy.displayName in users or users == ['all']) and ([str(element.media.status)] in allowed_movie_status if element.type == 'movie' else [str(element.media.status)] in allowed_show_status):
                         last_requests.append(element)
@@ -289,7 +289,7 @@ class requests(classes.watchlist):
         if len(users) > 0 and len(api_key) > 0:
             refresh = False
             try:
-                response = get(base_url + '/api/v1/request?take=10000')
+                response = get(base_url + '//api/v1/request?take=10000&filter=approved')
                 for element_ in response.results:
                     if not any(x.id == element_.id and x.updatedAt == element_.updatedAt for x in last_requests) and (element_.requestedBy.displayName in users or users == ['all']) and ([str(element_.media.status)] in allowed_movie_status if element_.type == 'movie' else [str(element_.media.status)] in allowed_show_status):
                         ui_print('[overseerr] found new overseerr request by user "' + element_.requestedBy.displayName + '".')
