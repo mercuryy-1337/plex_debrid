@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+ plexdebrid:
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    container_name: plexdebrid
+    environment:
+      - PGID=1000
+      - PUID=1000
+      - TZ=Africa/Johannesburg
+    image: mercuryy1337/pd
+    restart: always
+    volumes:
+      - ./settings.json:/settings.json:rw
