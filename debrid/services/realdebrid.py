@@ -166,38 +166,41 @@ def download(element, stream=True, query='', force=False):
                             
                             response = get('https://api.real-debrid.com/rest/1.0/torrents/info/' + torrent_id)
                             actual_title = ""
-                            if len(response.links) == len(cached_ids):
-                                actual_title = response.filename
-                                release.download = response.links
-                            else:
-                                if response.status in ["queued","magnet_convesion","downloading","uploading"]:
-                                    if hasattr(element,"version"):
-                                        debrid_uncached = True
-                                        for i,rule in enumerate(element.version.rules):
-                                            if (rule[0] == "cache status") and (rule[1] == 'requirement' or rule[1] == 'preference') and (rule[2] == "cached"):
-                                                debrid_uncached = False
-                                        if debrid_uncached:
-                                            import debrid as db
-                                            release.files = version.files
-                                            db.downloading += [element.query() + ' [' + element.version.name + ']']
-                                            ui_print('[realdebrid] adding uncached release: ' + release.title)
-                                            return True
+                            if hasattr(response, 'links'):
+                                if len(response.links) == len(cached_ids):
+                                    actual_title = response.filename
+                                    release.download = response.links
                                 else:
-                                    ui_print('[realdebrid] error: selecting this cached file combination returned a .rar archive - trying a different file combination.', ui_settings.debug)
-                                    delete('https://api.real-debrid.com/rest/1.0/torrents/delete/' + torrent_id)
-                                    continue
-                            if len(release.download) > 0:
-                                for link in release.download:
-                                    try:
-                                        response = post('https://api.real-debrid.com/rest/1.0/unrestrict/link',{'link': link})
-                                    except Exception as e:
-                                        print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] Error: {e}')
-                                        break
-                                release.files = version.files
-                                ui_print('[realdebrid] adding cached release: ' + release.title)
-                                if not actual_title == "":
-                                    release.title = actual_title
-                                return True
+                                    if response.status in ["queued","magnet_convesion","downloading","uploading"]:
+                                        if hasattr(element,"version"):
+                                            debrid_uncached = True
+                                            for i,rule in enumerate(element.version.rules):
+                                                if (rule[0] == "cache status") and (rule[1] == 'requirement' or rule[1] == 'preference') and (rule[2] == "cached"):
+                                                    debrid_uncached = False
+                                            if debrid_uncached:
+                                                import debrid as db
+                                                release.files = version.files
+                                                db.downloading += [element.query() + ' [' + element.version.name + ']']
+                                                ui_print('[realdebrid] adding uncached release: ' + release.title)
+                                                return True
+                                    else:
+                                        ui_print('[realdebrid] error: selecting this cached file combination returned a .rar archive - trying a different file combination.', ui_settings.debug)
+                                        delete('https://api.real-debrid.com/rest/1.0/torrents/delete/' + torrent_id)
+                                        continue
+                                if len(release.download) > 0:
+                                    for link in release.download:
+                                        try:
+                                            response = post('https://api.real-debrid.com/rest/1.0/unrestrict/link',{'link': link})
+                                        except Exception as e:
+                                            print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] Error: {e}')
+                                            break
+                                    release.files = version.files
+                                    ui_print('[realdebrid] adding cached release: ' + release.title)
+                                    if not actual_title == "":
+                                        release.title = actual_title
+                                    return True
+                            else:
+                                print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] {response}')
                 ui_print('[realdebrid] error: no streamable version could be selected for release: ' + release.title)
                 return False
             else:
