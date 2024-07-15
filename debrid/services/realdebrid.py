@@ -139,65 +139,70 @@ def download(element, stream=True, query='', force=False):
                                 cached_ids += [file.id]
                             # post magnet to real debrid
                             max_retries = 3
-                            retry_delay = 2 # seconds
-                            for attempt in range(max_retries):
-                                try:
-                                    response = post('https://api.real-debrid.com/rest/1.0/torrents/addMagnet', {'magnet': str(release.download[0])})
-                                    if hasattr(response, 'error_code') and response.error_code == 25:
-                                        retry = f'Error adding magnet, Retry {attempt + 1}/{max_retries} due to ({response.error_code} service_unavailable)'
-                                        print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] {retry}')
-                                        retry_delay += retry_delay
-                                        time.sleep(retry_delay)
-                                        continue
-                                    else:
-                                        torrent_id = str(response.id)
-                                        break
-                                except Exception as e:
-                                    print(f'Error: {e}')
-                                    print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] error: could not add magnet for release: ' + release.title)
-                                    if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
-                                        if e.response.status_code == 429:
-                                            print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] Rate limit exceeded')
+                            retry_delay = 5 # seconds
+                            #for attempt in range(max_retries):
+                            try:
+                                response = post('https://api.real-debrid.com/rest/1.0/torrents/addMagnet', {'magnet': str(release.download[0])})
+                                if hasattr(response, 'error_code') and response.error_code == 25:
+                                    retry = f'Error adding magnet due to ({response.error_code} service_unavailable)'
+                                    print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] {retry}')
                                     continue
+                                else:
+                                    torrent_id = str(response.id)
+                            except Exception as e:
+                                print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] error: could not add magnet for release. ({e})')
+                                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                                    if e.response.status_code == 429:
+                                        print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] Rate limit exceeded')
+                                continue
                             response = post('https://api.real-debrid.com/rest/1.0/torrents/selectFiles/' + torrent_id,{'files': str(','.join(cached_ids))})
                             #if response is None:
                             #    error = "/selectFiles endpoint is down"
                             #    print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] {error}')
                             
-                            response = get('https://api.real-debrid.com/rest/1.0/torrents/info/' + torrent_id)
-                            actual_title = ""
-                            if len(response.links) == len(cached_ids):
-                                actual_title = response.filename
-                                release.download = response.links
-                            else:
-                                if response.status in ["queued","magnet_convesion","downloading","uploading"]:
-                                    if hasattr(element,"version"):
-                                        debrid_uncached = True
-                                        for i,rule in enumerate(element.version.rules):
-                                            if (rule[0] == "cache status") and (rule[1] == 'requirement' or rule[1] == 'preference') and (rule[2] == "cached"):
-                                                debrid_uncached = False
-                                        if debrid_uncached:
-                                            import debrid as db
-                                            release.files = version.files
-                                            db.downloading += [element.query() + ' [' + element.version.name + ']']
-                                            ui_print('[realdebrid] adding uncached release: ' + release.title)
-                                            return True
-                                else:
-                                    ui_print('[realdebrid] error: selecting this cached file combination returned a .rar archive - trying a different file combination.', ui_settings.debug)
-                                    delete('https://api.real-debrid.com/rest/1.0/torrents/delete/' + torrent_id)
+                            for attempt in range(max_retries):
+                                response = get('https://api.real-debrid.com/rest/1.0/torrents/info/' + torrent_id)
+                                actual_title = ""
+                                
+                                if hasattr(response, 'links'):
+                                    if len(response.links) == len(cached_ids):
+                                        actual_title = response.filename
+                                        release.download = response.links
+                                    else:
+                                        if response.status in ["queued","magnet_convesion","downloading","uploading"]:
+                                            if hasattr(element,"version"):
+                                                debrid_uncached = True
+                                                for i,rule in enumerate(element.version.rules):
+                                                    if (rule[0] == "cache status") and (rule[1] == 'requirement' or rule[1] == 'preference') and (rule[2] == "cached"):
+                                                        debrid_uncached = False
+                                                if debrid_uncached:
+                                                    import debrid as db
+                                                    release.files = version.files
+                                                    db.downloading += [element.query() + ' [' + element.version.name + ']']
+                                                    ui_print('[realdebrid] adding uncached release: ' + release.title)
+                                                    return True
+                                        else:
+                                            ui_print('[realdebrid] error: selecting this cached file combination returned a .rar archive - trying a different file combination.', ui_settings.debug)
+                                            delete('https://api.real-debrid.com/rest/1.0/torrents/delete/' + torrent_id)
+                                            continue
+                                    if len(release.download) > 0:
+                                        for link in release.download:
+                                            try:
+                                                response = post('https://api.real-debrid.com/rest/1.0/unrestrict/link',{'link': link})
+                                            except Exception as e:
+                                                print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] Error: {e}')
+                                                break
+                                        release.files = version.files
+                                        ui_print('[realdebrid] adding cached release: ' + release.title)
+                                        if not actual_title == "":
+                                            release.title = actual_title
+                                        return True
+                                elif response.error_code == 34:
+                                    time.sleep(retry_delay)
+                                    retry_delay += 1
                                     continue
-                            if len(release.download) > 0:
-                                for link in release.download:
-                                    try:
-                                        response = post('https://api.real-debrid.com/rest/1.0/unrestrict/link',{'link': link})
-                                    except Exception as e:
-                                        print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] Error: {e}')
-                                        break
-                                release.files = version.files
-                                ui_print('[realdebrid] adding cached release: ' + release.title)
-                                if not actual_title == "":
-                                    release.title = actual_title
-                                return True
+                                else:
+                                    print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] {response.error}')
                 ui_print('[realdebrid] error: no streamable version could be selected for release: ' + release.title)
                 return False
             else:
