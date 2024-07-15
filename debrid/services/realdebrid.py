@@ -138,7 +138,7 @@ def download(element, stream=True, query='', force=False):
                             for file in version.files:
                                 cached_ids += [file.id]
                             # post magnet to real debrid
-                            max_retries = 5
+                            max_retries = 3
                             retry_delay = 2 # seconds
                             for attempt in range(max_retries):
                                 try:
@@ -149,7 +149,9 @@ def download(element, stream=True, query='', force=False):
                                         retry_delay += retry_delay
                                         time.sleep(retry_delay)
                                         continue
-                                    torrent_id = str(response.id)
+                                    else:
+                                        torrent_id = str(response.id)
+                                        break
                                 except Exception as e:
                                     print(f'Error: {e}')
                                     print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] error: could not add magnet for release: ' + release.title)
