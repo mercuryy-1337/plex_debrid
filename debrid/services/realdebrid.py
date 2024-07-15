@@ -203,6 +203,7 @@ def download(element, stream=True, query='', force=False):
                                     continue
                                 else:
                                     print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] {response.error}')
+                                    break
                 ui_print('[realdebrid] error: no streamable version could be selected for release: ' + release.title)
                 return False
             else:
