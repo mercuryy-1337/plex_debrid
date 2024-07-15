@@ -197,7 +197,7 @@ def download(element, stream=True, query='', force=False):
                                         if not actual_title == "":
                                             release.title = actual_title
                                         return True
-                                elif response.error_code == 34:
+                                elif hasattr(response, "error_code") and response.error_code == 34:
                                     time.sleep(retry_delay)
                                     retry_delay += 1
                                     continue
