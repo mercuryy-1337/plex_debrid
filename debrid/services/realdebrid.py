@@ -140,25 +140,21 @@ def download(element, stream=True, query='', force=False):
                             # post magnet to real debrid
                             max_retries = 3
                             retry_delay = 2 # seconds
-                            for attempt in range(max_retries):
-                                try:
-                                    response = post('https://api.real-debrid.com/rest/1.0/torrents/addMagnet', {'magnet': str(release.download[0])})
-                                    if hasattr(response, 'error_code') and response.error_code == 25:
-                                        retry = f'Error adding magnet, Retry {attempt + 1}/{max_retries} due to ({response.error_code} service_unavailable)'
-                                        print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] {retry}')
-                                        retry_delay += retry_delay
-                                        time.sleep(retry_delay)
-                                        continue
-                                    else:
-                                        torrent_id = str(response.id)
-                                        break
-                                except Exception as e:
-                                    print(f'Error: {e}')
-                                    print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] error: could not add magnet for release: ' + release.title)
-                                    if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
-                                        if e.response.status_code == 429:
-                                            print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] Rate limit exceeded')
+                            #for attempt in range(max_retries):
+                            try:
+                                response = post('https://api.real-debrid.com/rest/1.0/torrents/addMagnet', {'magnet': str(release.download[0])})
+                                if hasattr(response, 'error_code') and response.error_code == 25:
+                                    retry = f'Error adding magnetdue to ({response.error_code} service_unavailable)'
+                                    print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] {retry}')
                                     continue
+                                else:
+                                    torrent_id = str(response.id)
+                            except Exception as e:
+                                print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] error: could not add magnet for release: ' + release.title)
+                                if hasattr(e, 'response') and hasattr(e.response, 'status_code'):
+                                    if e.response.status_code == 429:
+                                        print(f'[{str(datetime.datetime.now().strftime("%d/%m/%y %H:%M:%S"))}] [realdebrid] Rate limit exceeded')
+                                continue
                             response = post('https://api.real-debrid.com/rest/1.0/torrents/selectFiles/' + torrent_id,{'files': str(','.join(cached_ids))})
                             #if response is None:
                             #    error = "/selectFiles endpoint is down"
