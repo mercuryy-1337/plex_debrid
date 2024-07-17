@@ -128,6 +128,7 @@ def download(element, stream=True, query='', force=False):
         wanted = element.files()
     for release in cached[:]:
         # if release matches query
+        time.sleep(2.5)
         if regex.match(query, release.title,regex.I) or force:
             if stream:
                 release.size = 0
