@@ -9,6 +9,6 @@ services:
       - PUID=1000
       - TZ=Africa/Johannesburg
     image: mercuryy1337/pd:latest
-    restart: always
+    restart: unless-stopped
     volumes:
       - ./settings.json:/settings.json:rw #optional, use this if you already have a settings.json from running PD without docker
