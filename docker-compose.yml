@@ -11,4 +11,4 @@ services:
     image: mercuryy1337/pd
     restart: always
     volumes:
-      - ./settings.json:/settings.json:rw
+      - ./settings.json:/settings.json:rw #optional, use this if you already have a settings.json from running PD without docker
