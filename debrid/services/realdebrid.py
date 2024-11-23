@@ -2,12 +2,12 @@
 from base import *
 from ui.ui_print import *
 import releases
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
+import json
 
 # (required) Name of the Debrid service
 name = "Real Debrid"
 short = "RD"
+media_file_extensions = ['.mkv', '.mp4', '.avi', '.mov']
 # (required) Authentification of the Debrid service, can be oauth aswell. Create a setting for the required variables in the ui.settings_list. For an oauth example check the trakt authentification.
 api_key = ""
 # Define Variables
@@ -72,10 +72,12 @@ def post(url, data):
 def delete(url):
     headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36','authorization': 'Bearer ' + api_key}
     try:
-        requests.delete(url, headers=headers)
+        response = requests.delete(url, headers=headers)
+        print(f"Delete response: {response.json()}")
         # time.sleep(1)
     except Exception as e:
         ui_print("[realdebrid] error: (delete exception): " + str(e), debug=ui_settings.debug)
+        print("[realdebrid] error: (delete exception): " + str(e))
         None
     return None
 
@@ -153,7 +155,7 @@ def download(element, stream=True, query='', force=False):
                                 actual_title = response.filename
                                 release.download = response.links
                             else:
-                                if response.status in ["queued","magnet_convesion","downloading","uploading"]:
+                                if response.status in ["queued","magnet_conversion","downloading","uploading"]:
                                     if hasattr(element,"version"):
                                         debrid_uncached = True
                                         for i,rule in enumerate(element.version.rules):
@@ -195,11 +197,46 @@ def download(element, stream=True, query='', force=False):
             ui_print('[realdebrid] error: rejecting release: "' + release.title + '" because it doesnt match the allowed deviation', ui_settings.debug)
     return False
 
-async def fetch(executor, url):
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, get, url)
+def check_if_cached(magnet): 
+    try:
+        magnet_url = "https://api.real-debrid.com/rest/1.0/torrents/addMagnet"
+        add_response = post(magnet_url, data={'magnet': magnet})
+        torrent_id = add_response.id
+        if not torrent_id:
+            raise Exception("Failed to retrieve torrent ID.")
+        info_url = f"https://api.real-debrid.com/rest/1.0/torrents/info/{torrent_id}"
+        info_response = get(info_url)
+        files = info_response.files
 
-async def check_async(element, force=False):
+        media_file_ids = [
+            str(file.id) for file in files 
+            if file.path.endswith(tuple(media_file_extensions))
+        ]
+        if not media_file_ids:
+            raise ui_print(f"[realdebrid] No media files found in torrent {torrent_id}.", ui_settings.debug)
+        select_url = f"https://api.real-debrid.com/rest/1.0/torrents/selectFiles/{torrent_id}"
+        post(select_url, data={'files': ','.join(media_file_ids)})
+        info_response = get(info_url)
+        if info_response.status == 'downloaded':
+            delete_torrent(torrent_id)
+            return info_response
+        else:
+            delete_torrent(torrent_id)
+            return None
+    except Exception as e:
+        ui_print(f"[realdebrid] Error(check_if_cached): {e}", ui_settings.debug)
+        return None
+
+def delete_torrent(torrent_id):
+    headers = {'Authorization': f'Bearer {api_key}'}
+    delete_url = f"https://api.real-debrid.com/rest/1.0/torrents/delete/{torrent_id}"
+    response = requests.delete(delete_url, headers=headers)
+    if response.status_code != 204:
+        print(f"Error deleting torrent {torrent_id}, status: {response.json()}")
+    
+
+# (required) Check Function
+def check(element, force=False):
     if force:
         wanted = ['.*']
     else:
@@ -207,46 +244,37 @@ async def check_async(element, force=False):
     unwanted = releases.sort.unwanted
     wanted_patterns = list(zip(wanted, [regex.compile(r'(' + key + ')', regex.IGNORECASE) for key in wanted]))
     unwanted_patterns = list(zip(unwanted, [regex.compile(r'(' + key + ')', regex.IGNORECASE) for key in unwanted]))
-    hashes = []
+
+    downloads = []
     for release in element.Releases[:]:
-        if len(release.hash) == 40:
-            hashes.append(release.hash)
+        if release.download:
+            downloads.append(release.download)
         else:
-            ui_print("[realdebrid] error (missing torrent hash): ignoring release '" + release.title + "'", ui_settings.debug)
+            ui_print(f"[realdebrid] error: missing download URL for release '{release.title}'", ui_settings.debug)
             element.Releases.remove(release)
-    
-    if len(hashes) > 0:
+    if len(downloads) > 0:
+        responses = [check_if_cached(download) for download in downloads]
         ui_print("[realdebrid] checking and sorting all release files ...", ui_settings.debug)
-        executor = ThreadPoolExecutor(max_workers=10)
-        tasks = [fetch(executor, f'https://api.real-debrid.com/rest/1.0/torrents/instantAvailability/{hash}') for hash in hashes]
-        responses = await asyncio.gather(*tasks)
-        
         for release in element.Releases:
             release.files = []
             release_hash = release.hash.lower()
             for response in responses:
-                if hasattr(response, release_hash):
-                    response_attr = getattr(response, release_hash)
-                    if hasattr(response_attr, 'rd'):
-                        rd_attr = response_attr.rd
-                        if len(rd_attr) > 0:
-                            for cashed_version in rd_attr:
-                                version_files = []
-                                for file_ in cashed_version.__dict__:
-                                    file_attr = getattr(cashed_version, file_)
-                                    debrid_file = file(file_, file_attr.filename, file_attr.filesize, wanted_patterns, unwanted_patterns)
+                if response:
+                    if response.hash.lower() == release_hash:
+                        if hasattr(response, 'files'):
+                            rd_attr = response.files
+                            if len(rd_attr) > 0:
+                                for cached_version in rd_attr:
+                                    version_files = []
+                                    debrid_file = file(str(cached_version.id), cached_version.path.lstrip('/'), cached_version.bytes, wanted_patterns, unwanted_patterns)
                                     version_files.append(debrid_file)
-                                release.files.append(version(version_files))
-                            release.files.sort(key=lambda x: len(x.files), reverse=True)
-                            release.files.sort(key=lambda x: x.wanted, reverse=True)
-                            release.files.sort(key=lambda x: x.unwanted, reverse=False)
-                            release.wanted = release.files[0].wanted
-                            release.unwanted = release.files[0].unwanted
-                            release.size = release.files[0].size
-                            release.cached.append('RD')
-                        continue
+                                    release.files.append(version(version_files))
+                                release.files.sort(key=lambda x: len(x.files), reverse=True)
+                                release.files.sort(key=lambda x: x.wanted, reverse=True)
+                                release.files.sort(key=lambda x: x.unwanted, reverse=False)
+                                release.wanted = release.files[0].wanted
+                                release.unwanted = release.files[0].unwanted
+                                release.size = release.files[0].size
+                                release.cached.append('RD')
+                            continue
         ui_print("done", ui_settings.debug)
-
-# (required) Check Function
-def check(element, force=False):
-    asyncio.run(check_async(element, force=False))

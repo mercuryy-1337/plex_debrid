@@ -1,7 +1,7 @@
 # import modules
 from base import *
 from ui.ui_print import *
-import releases
+import releases, difflib
 
 name = "torrentio"
 
@@ -11,8 +11,10 @@ session = custom_session()
 
 
 def get(url):
+    headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
     try:
-        response = session.get(url, timeout=60)
+        response = session.get(url, headers=headers, timeout=60)
         response = json.loads(
             response.content, object_hook=lambda d: SimpleNamespace(**d))
         return response
@@ -87,10 +89,12 @@ def scrape(query, altquery):
             if type == "show":
                 url = "https://v3-cinemeta.strem.io/catalog/series/top/search=" + query + ".json"
                 meta = get(url)
+                similarity = difflib.SequenceMatcher(None, query, meta.metas[0].name).ratio()
+                query = meta.metas[0].imdb_id if similarity > 0.5 else meta.metas[1].imdb_id
             else:
                 url = "https://v3-cinemeta.strem.io/catalog/movie/top/search=" + query + ".json"
                 meta = get(url)
-            query = meta.metas[0].imdb_id
+                query = meta.metas[0].imdb_id
         except:
             try:
                 if type == "movie":
