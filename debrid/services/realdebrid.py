@@ -3,6 +3,8 @@ from base import *
 from ui.ui_print import *
 import releases
 import json
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
 
 # (required) Name of the Debrid service
 name = "Real Debrid"
@@ -57,7 +59,6 @@ def post(url, data):
     response = None
     try:
         response = session.post(url, headers=headers, data=data)
-        logerror(response)
         response = json.loads(response.content, object_hook=lambda d: SimpleNamespace(**d))
     except Exception as e:
         if hasattr(response,"status_code"):
@@ -169,7 +170,7 @@ def download(element, stream=True, query='', force=False):
                                             return True
                                 else:
                                     ui_print('[realdebrid] error: selecting this cached file combination returned a .rar archive - trying a different file combination.', ui_settings.debug)
-                                    delete('https://api.real-debrid.com/rest/1.0/torrents/delete/' + torrent_id)
+                                    delete_torrent(torrent_id)
                                     continue
                             if len(release.download) > 0:
                                 for link in release.download:
@@ -206,6 +207,9 @@ def check_if_cached(magnet):
             raise Exception("Failed to retrieve torrent ID.")
         info_url = f"https://api.real-debrid.com/rest/1.0/torrents/info/{torrent_id}"
         info_response = get(info_url)
+        if info_response.filename == "Invalid Magnet":
+            delete_torrent(torrent_id)
+            return None
         files = info_response.files
 
         media_file_ids = [
@@ -222,10 +226,8 @@ def check_if_cached(magnet):
             return info_response
         else:
             delete_torrent(torrent_id)
-            return None
     except Exception as e:
         ui_print(f"[realdebrid] Error(check_if_cached): {e}", ui_settings.debug)
-        return None
 
 def delete_torrent(torrent_id):
     headers = {'Authorization': f'Bearer {api_key}'}
@@ -233,10 +235,14 @@ def delete_torrent(torrent_id):
     response = requests.delete(delete_url, headers=headers)
     if response.status_code != 204:
         print(f"Error deleting torrent {torrent_id}, status: {response.json()}")
-    
+        time.sleep(1)
+        delete_torrent(torrent_id)
 
-# (required) Check Function
-def check(element, force=False):
+async def fetch_with_executor(executor, func, *args, **kwargs):
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(executor, func, *args, **kwargs)
+
+async def check_async(element, force=False):
     if force:
         wanted = ['.*']
     else:
@@ -252,9 +258,14 @@ def check(element, force=False):
         else:
             ui_print(f"[realdebrid] error: missing download URL for release '{release.title}'", ui_settings.debug)
             element.Releases.remove(release)
+    
     if len(downloads) > 0:
-        responses = [check_if_cached(download) for download in downloads]
         ui_print("[realdebrid] checking and sorting all release files ...", ui_settings.debug)
+        
+        executor = ThreadPoolExecutor(max_workers=2)
+        tasks = [fetch_with_executor(executor, check_if_cached, download) for download in downloads]
+        responses = await asyncio.gather(*tasks)
+        responses = [response for response in responses if response is not None]
         for release in element.Releases:
             release.files = []
             release_hash = release.hash.lower()
@@ -278,3 +289,8 @@ def check(element, force=False):
                                 release.cached.append('RD')
                             continue
         ui_print("done", ui_settings.debug)
+
+
+# (required) Check Function
+def check(element, force=False):
+    asyncio.run(check_async(element, force))
