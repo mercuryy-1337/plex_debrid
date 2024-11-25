@@ -235,7 +235,7 @@ async def check_if_cached(magnet):
                     if file['path'].endswith(tuple(media_file_extensions))
                 ]
                 if not media_file_ids:
-                    delete_torrent(torrent_id)
+                    await delete_torrent(torrent_id)
                     raise Exception(f"No media files found in torrent {torrent_id}.")
                 
                 select_url = f"https://api.real-debrid.com/rest/1.0/torrents/selectFiles/{torrent_id}"
