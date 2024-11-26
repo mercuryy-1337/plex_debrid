@@ -77,13 +77,9 @@ def download(element, stream=True, query='', force=False):
     cached = element.Releases
     if query == '':
         query = element.deviation()
-    ui_print(f"[torbox] checking releases for query: {query}", debug=True)
-    ui_print(f"[torbox] release.title: {cached[0].title}", debug=True)
     for release in cached[:]:
-        ui_print(f"[torbox] before regex: {release.title}", debug=True)
         if regex.match(r'(' + query + ')', release.title, regex.I) or force:
             if stream:
-                ui_print(f"[torbox] stream: {release.title}", debug=True)
                 # Verify cache status first
                 if 'TB' not in release.cached:
                     continue
