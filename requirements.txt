@@ -1,4 +1,4 @@
-bs4
+beautifulsoup4==4.12.3
 regex
 requests
 six
