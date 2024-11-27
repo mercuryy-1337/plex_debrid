@@ -1,4 +1,4 @@
 beautifulsoup4==4.12.3
-regex
-requests
-six
+regex==2024.11.6
+requests==2.32.3
+six==1.16.0
