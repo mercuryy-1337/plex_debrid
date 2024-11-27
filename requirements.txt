@@ -2,4 +2,3 @@ bs4
 regex
 requests
 six
-aiohttp
