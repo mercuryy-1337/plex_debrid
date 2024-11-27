@@ -4,14 +4,21 @@ from ui.ui_print import *
 import releases
 import json
 from concurrent.futures import ThreadPoolExecutor
-import asyncio
+import asyncio, aiohttp
+from asyncio import Semaphore
 
 # (required) Name of the Debrid service
 name = "Real Debrid"
 short = "RD"
-media_file_extensions = ['.mkv', '.mp4', '.avi', '.mov']
+media_file_extensions = [
+    '.yuv', '.wmv', '.webm', '.vob', '.viv', '.svi', '.roq', '.rmvb', '.rm',
+    '.ogv', '.ogg', '.nsv', '.mxf', '.mts', '.m2ts', '.ts', '.mpg', '.mpeg',
+    '.m2v', '.mp2', '.mpe', '.mpv', '.mp4', '.m4p', '.m4v', '.mov', '.qt',
+    '.mng', '.mkv', '.flv', '.drc', '.avi', '.asf', '.amv'
+]
 # (required) Authentification of the Debrid service, can be oauth aswell. Create a setting for the required variables in the ui.settings_list. For an oauth example check the trakt authentification.
 api_key = ""
+semaphore = Semaphore(3)
 # Define Variables
 session = requests.Session()
 errors = [
@@ -198,45 +205,64 @@ def download(element, stream=True, query='', force=False):
             ui_print('[realdebrid] error: rejecting release: "' + release.title + '" because it doesnt match the allowed deviation', ui_settings.debug)
     return False
 
-def check_if_cached(magnet): 
+async def check_if_cached_limited(magnet):
+    async with semaphore:
+        return await check_if_cached(magnet)
+
+async def check_if_cached(magnet): 
     try:
-        magnet_url = "https://api.real-debrid.com/rest/1.0/torrents/addMagnet"
-        add_response = post(magnet_url, data={'magnet': magnet})
-        torrent_id = add_response.id
-        if not torrent_id:
-            raise Exception("Failed to retrieve torrent ID.")
-        info_url = f"https://api.real-debrid.com/rest/1.0/torrents/info/{torrent_id}"
-        info_response = get(info_url)
-        if info_response.filename == "Invalid Magnet":
-            delete_torrent(torrent_id)
-            return None
-        files = info_response.files
+        async with aiohttp.ClientSession() as session:
+            magnet_url = "https://api.real-debrid.com/rest/1.0/torrents/addMagnet"
+            async with session.post(magnet_url, data={'magnet': magnet}, headers={'Authorization': f'Bearer {api_key}'}) as add_response:
+                # await print(f"Add response: {add_response}")
+                add_response_data = await add_response.json()
+                add_response_data = SimpleNamespace(**add_response_data)
+                torrent_id = add_response_data.id
+                if not torrent_id:
+                    raise Exception("Failed to retrieve torrent ID.")
 
-        media_file_ids = [
-            str(file.id) for file in files 
-            if file.path.endswith(tuple(media_file_extensions))
-        ]
-        if not media_file_ids:
-            raise ui_print(f"[realdebrid] No media files found in torrent {torrent_id}.", ui_settings.debug)
-        select_url = f"https://api.real-debrid.com/rest/1.0/torrents/selectFiles/{torrent_id}"
-        post(select_url, data={'files': ','.join(media_file_ids)})
-        info_response = get(info_url)
-        if info_response.status == 'downloaded':
-            delete_torrent(torrent_id)
-            return info_response
-        else:
-            delete_torrent(torrent_id)
+            info_url = f"https://api.real-debrid.com/rest/1.0/torrents/info/{torrent_id}"
+            async with session.get(info_url, headers={'Authorization': f'Bearer {api_key}'}) as info_response:
+                info_data = await info_response.json()
+                info_data = SimpleNamespace(**info_data)
+                if info_data.filename == "Invalid Magnet":
+                    await delete_torrent(torrent_id)
+                    return None
+
+                files = info_data.files
+                media_file_ids = [
+                    str(file['id']) for file in files 
+                    if file['path'].endswith(tuple(media_file_extensions))
+                ]
+                if not media_file_ids:
+                    await delete_torrent(torrent_id)
+                    raise Exception(f"No media files found in torrent {torrent_id}.")
+                
+                select_url = f"https://api.real-debrid.com/rest/1.0/torrents/selectFiles/{torrent_id}"
+                async with session.post(select_url, data={'files': ','.join(media_file_ids)}, headers={'Authorization': f'Bearer {api_key}'}) as select_response:
+                    await select_response.text()
+
+            async with session.get(info_url, headers={'Authorization': f'Bearer {api_key}'}) as final_response:
+                final_data = await final_response.json()
+                final_data = SimpleNamespace(**final_data)
+                if final_data.status == 'downloaded':
+                    await delete_torrent(torrent_id)
+                    return final_data
+                else:
+                    await delete_torrent(torrent_id)
     except Exception as e:
-        ui_print(f"[realdebrid] Error(check_if_cached): {e}", ui_settings.debug)
+        ui_print(f"[realdebrid] Error(check_if_cached_async): {e}", ui_settings.debug)
+        return None
 
-def delete_torrent(torrent_id):
+async def delete_torrent(torrent_id):
     headers = {'Authorization': f'Bearer {api_key}'}
     delete_url = f"https://api.real-debrid.com/rest/1.0/torrents/delete/{torrent_id}"
-    response = requests.delete(delete_url, headers=headers)
-    if response.status_code != 204:
-        print(f"Error deleting torrent {torrent_id}, status: {response.json()}")
-        time.sleep(1)
-        delete_torrent(torrent_id)
+    async with aiohttp.ClientSession() as session:
+        async with session.delete(delete_url, headers=headers) as response:
+            if response.status != 204:
+                ui_print(f"Error deleting torrent {torrent_id}, status: {await response.json()}")
+                await asyncio.sleep(1)
+                await delete_torrent(torrent_id)
 
 async def fetch_with_executor(executor, func, *args, **kwargs):
     loop = asyncio.get_event_loop()
@@ -262,8 +288,7 @@ async def check_async(element, force=False):
     if len(downloads) > 0:
         ui_print("[realdebrid] checking and sorting all release files ...", ui_settings.debug)
         
-        executor = ThreadPoolExecutor(max_workers=2)
-        tasks = [fetch_with_executor(executor, check_if_cached, download) for download in downloads]
+        tasks = [check_if_cached_limited(download) for download in downloads]
         responses = await asyncio.gather(*tasks)
         responses = [response for response in responses if response is not None]
         for release in element.Releases:
@@ -277,7 +302,7 @@ async def check_async(element, force=False):
                             if len(rd_attr) > 0:
                                 for cached_version in rd_attr:
                                     version_files = []
-                                    debrid_file = file(str(cached_version.id), cached_version.path.lstrip('/'), cached_version.bytes, wanted_patterns, unwanted_patterns)
+                                    debrid_file = file(str(cached_version['id']), cached_version['path'].lstrip('/'), cached_version['bytes'], wanted_patterns, unwanted_patterns)
                                     version_files.append(debrid_file)
                                     release.files.append(version(version_files))
                                 release.files.sort(key=lambda x: len(x.files), reverse=True)
@@ -293,4 +318,10 @@ async def check_async(element, force=False):
 
 # (required) Check Function
 def check(element, force=False):
-    asyncio.run(check_async(element, force))
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    loop.run_until_complete(check_async(element, force))

@@ -5,10 +5,11 @@ from debrid.services import alldebrid
 from debrid.services import premiumize
 from debrid.services import debridlink
 from debrid.services import putio
+from debrid.services import torbox
 
 #define subclass method
 def __subclasses__():
-    return [realdebrid,alldebrid,premiumize,debridlink,putio]
+    return [realdebrid,alldebrid,premiumize,debridlink,putio,torbox]
 
 active = []
 
