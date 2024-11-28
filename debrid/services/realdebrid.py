@@ -252,7 +252,8 @@ def check_if_cached(magnet):
             if file.path.endswith(tuple(media_file_extensions))
         ]
         if not media_file_ids:
-            raise ui_print(f"[realdebrid] No media files found in torrent {torrent_id}.", ui_settings.debug)
+            delete_torrent(torrent_id)
+            return None
         select_url = f"https://api.real-debrid.com/rest/1.0/torrents/selectFiles/{torrent_id}"
         post(select_url, data={'files': ','.join(media_file_ids)})
         info_response = get(info_url)
