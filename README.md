@@ -1,11 +1,10 @@
-## Other peoples way better projects worth checking out:
+## Well maintained fork that you should use instead of this one:
 
 
-### Debrid Media Manager: 
+### Elfhosted: 
 
-https://github.com/debridmediamanager 
+https://github.com/elfhosted/plex_debrid
 
-(also includes zurg, a way better alternative to rclone_rd)
 
 # plex_debrid
 Plex/Emby/Jellyfin/Infuse torrent streaming through Debrid Services, using Plex Discover Watchlists, Trakt lists and Overseerr.
