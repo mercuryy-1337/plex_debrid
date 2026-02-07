@@ -134,11 +134,13 @@ def create_spa_shell(app_state, initial_page, on_navigate):
             ).classes("w-full")
 
             # Quasar QMenu popup — portals to <body> so no overflow clipping
+            # 'fit' matches parent width; max-width clamp + overflow-hidden prevents blowout
             suggestions_menu = ui.menu().props(
                 'no-parent-event no-focus no-refocus fit anchor="bottom left" self="top left"'
             ).classes("no-shadow").style(
                 f"background: {COLORS['surface']}; border: 1px solid {COLORS['surface_light']}; "
-                "border-radius: 0; max-height: 360px; overflow-y: auto; "
+                "border-radius: 0; max-height: 360px; overflow-y: auto; overflow-x: hidden; "
+                "max-width: min(420px, 100vw - 32px); width: 420px; "
                 "box-shadow: 0 8px 24px rgba(0,0,0,0.5);"
             )
 
@@ -189,9 +191,12 @@ def create_spa_shell(app_state, initial_page, on_navigate):
                             ui.icon(type_icon).style(
                                 f"color: {COLORS['text_muted']}; font-size: 1.4rem; width: 32px; text-align: center"
                             )
-                        with ui.column().classes("gap-0 flex-1 min-w-0"):
-                            ui.label(h_name).classes("text-sm font-medium truncate").style(
-                                f"color: {COLORS['text']}")
+                        with ui.column().classes("gap-0 flex-1 min-w-0").style(
+                            "overflow: hidden"
+                        ):
+                            ui.label(h_name).classes("text-sm font-medium").style(
+                                f"color: {COLORS['text']}; "
+                                "word-wrap: break-word; overflow-wrap: break-word; white-space: normal")
                             with ui.row().classes("items-center gap-2"):
                                 ui.label(type_label).classes("text-xs").style(
                                     f"color: {COLORS['primary']}")
@@ -202,6 +207,30 @@ def create_spa_shell(app_state, initial_page, on_navigate):
                                     ui.html(
                                         f'<span style="color: #F59E0B; font-size: 0.7rem">★ {h_rating}</span>'
                                     )
+
+                # "Search {query}" action row
+                async def _search_query(_, q=query_text):
+                    _search_state["suppress"] = True
+                    search_input.value = q
+                    suggestions_menu.close()
+                    active["page"] = "results"
+                    _build_nav()
+                    await on_navigate(f"results:{q}")
+
+                with ui.row().classes(
+                    "items-center gap-3 w-full cursor-pointer px-3 py-2"
+                ).style(
+                    f"border-top: 1px solid {COLORS['surface_light']}; "
+                    "transition: background 0.15s"
+                ).on("click", _search_query):
+                    ui.icon("search").style(
+                        f"color: {COLORS['primary']}; font-size: 1.2rem; width: 32px; text-align: center"
+                    )
+                    safe_q = _html.escape(query_text)
+                    ui.html(
+                        f'<span style="color: {COLORS["text_muted"]}; font-size: 0.85rem">'
+                        f'Search <b style="color: {COLORS["primary"]}">{safe_q}</b></span>'
+                    )
 
                 # Attribution footer
                 ui.html(
