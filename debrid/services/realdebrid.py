@@ -223,7 +223,9 @@ def download(element, stream=True, query='', force=False):
                     time.sleep(0.1)
                     post(f'https://api.real-debrid.com/rest/1.0/torrents/selectFiles/{response.id}', {'files': 'all'})
                     ui_print('[realdebrid] adding uncached release: ' + release.title)
-                except:
+                    return True
+                except Exception as e:
+                    ui_print('[realdebrid] error adding release: ' + str(e), ui_settings.debug)
                     continue
         else:
             ui_print('[realdebrid] error: rejecting release: "' + release.title + '" because it doesn\'t match the allowed deviation', ui_settings.debug)

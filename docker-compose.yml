@@ -1,14 +1,16 @@
 version: '3.8'
 services:
- plexdebrid:
-    stdin_open: true # docker run -i
-    tty: true        # docker run -t
-    container_name: plexdebrid
+  pd_reloaded:
+    container_name: pd_reloaded
+    build: .
     environment:
       - PGID=1000
       - PUID=1000
       - TZ=Africa/Johannesburg
-    image: mercuryy1337/pd:v2.9.6-hotfix
+    ports:
+      - "8008:8008"
     restart: unless-stopped
     volumes:
-      - ./settings.json:/settings.json:rw #optional, use this if you already have a settings.json from running PD without docker
+      - ./config:/app/config:rw
+      - /mnt:/mnt
+      - ./settings.json:/app/settings.json:rw  # optional, for legacy migration

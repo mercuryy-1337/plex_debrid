@@ -1,0 +1,186 @@
+"""
+Shared layout components for pd_reloaded web UI.
+"""
+
+from nicegui import ui
+
+
+def create_layout(app_state, active_page="dashboard"):
+    """Create the shared page layout with sidebar navigation."""
+    from webapp.theme import apply_theme, COLORS
+    from ui import ui_settings
+    apply_theme()
+
+    nav_items = [
+        {"icon": "dashboard", "label": "Dashboard", "path": "/dashboard"},
+        {"icon": "movie", "label": "Content", "path": "/content"},
+        {"icon": "search", "label": "Scraper", "path": "/scraper"},
+        {"icon": "settings", "label": "Settings", "path": "/settings"},
+        {"icon": "article", "label": "Logs", "path": "/logs"},
+    ]
+
+    app_version = ui_settings.version[0]
+
+    with ui.header().classes("items-center justify-between px-6 py-2"):
+        with ui.row().classes("items-center gap-2"):
+            ui.label("🎬").classes("text-xl")
+            ui.label("pd_reloaded").classes("text-lg font-bold").style(f"color: {COLORS['primary']}")
+            ui.label(f"v{app_version}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
+
+        with ui.row().classes("items-center gap-4"):
+            status_label = ui.label()
+            if app_state.automation_running:
+                status_label.text = "● Automation Running"
+                status_label.classes("status-running text-sm font-medium")
+            else:
+                status_label.text = "○ Automation Stopped"
+                status_label.classes("status-stopped text-sm font-medium")
+
+    with ui.left_drawer(value=True, fixed=True).classes("flex flex-col").style(
+        f"width: 220px; background-color: {COLORS['surface']}; padding: 0"
+    ) as drawer:
+        # Nav items - Plex-style: full-width blocks, line separators, active indicator
+        with ui.column().classes("w-full gap-0 pt-2"):
+            for i, item in enumerate(nav_items):
+                is_active = item["label"].lower() == active_page.lower()
+                with ui.element("a").props(f'href="{item["path"]}"').classes(
+                    "no-underline w-full"
+                ).style("text-decoration: none; display: block"):
+                    with ui.row().classes(
+                        "items-center gap-3 w-full cursor-pointer"
+                    ).style(
+                        f"padding: 14px 20px;"
+                        f"background: {'rgba(229,160,13,0.12)' if is_active else 'transparent'};"
+                        f"border-left: 3px solid {COLORS['primary'] if is_active else 'transparent'};"
+                        f"transition: background 0.15s ease"
+                    ):
+                        ui.icon(item["icon"]).classes("text-xl").style(
+                            f"color: {COLORS['primary'] if is_active else COLORS['text_muted']}"
+                        )
+                        ui.label(item["label"]).style(
+                            f"color: {COLORS['primary'] if is_active else COLORS['text']};"
+                            f"font-size: 0.95rem"
+                        ).classes("font-medium")
+                # Separator line between items
+                if i < len(nav_items) - 1:
+                    ui.element("div").style(
+                        "height: 1px; background: rgba(255,255,255,0.06); margin: 0"
+                    )
+
+        # Spacer pushes stats to bottom
+        ui.element("div").classes("flex-1")
+
+        # Quick stats at bottom
+        stats = app_state.get_stats()
+        with ui.column().classes("w-full gap-1").style(
+            "border-top: 1px solid rgba(255,255,255,0.08); padding: 14px 20px 10px"
+        ):
+            ui.label("QUICK STATS").classes("text-xs font-semibold tracking-wider mb-1").style(
+                f"color: {COLORS['text_muted']}"
+            )
+            _sidebar_stat("Movies", stats.get("movies", 0))
+            _sidebar_stat("Shows", stats.get("shows", 0))
+            _sidebar_stat("Anime", stats.get("anime", 0))
+
+        # Version label at very bottom
+        with ui.row().classes("w-full justify-center py-2").style(
+            "border-top: 1px solid rgba(255,255,255,0.06)"
+        ):
+            ui.label(f"v{app_version}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
+
+    return drawer
+
+
+def _sidebar_stat(label, value):
+    from webapp.theme import COLORS
+    with ui.row().classes("items-center justify-between w-full"):
+        ui.label(label).classes("text-sm").style(f"color: {COLORS['text_muted']}")
+        ui.label(str(value)).classes("text-sm font-semibold").style(f"color: {COLORS['text']}")
+
+
+def stat_card(icon, label, value, color="#E5A00D"):
+    """Create a statistics card."""
+    with ui.card().classes("stat-card w-full"):
+        with ui.row().classes("items-center gap-3"):
+            ui.icon(icon).classes("text-3xl").style(f"color: {color}")
+            with ui.column().classes("gap-0"):
+                ui.label(str(value)).classes("text-2xl font-bold").style("color: #E5E7EB")
+                ui.label(label).classes("text-sm").style("color: #9CA3AF")
+
+
+def content_card(item):
+    """Create a content item card for the dashboard/content grid."""
+    from webapp.theme import COLORS
+
+    media_type = item.get("media_type", "movie")
+    is_anime = item.get("is_anime", False)
+    badge_class = "badge-movie"
+    type_label = "Movie"
+    if media_type in ("show", "anime_show"):
+        if is_anime:
+            badge_class = "badge-anime"
+            type_label = "Anime"
+        else:
+            badge_class = "badge-show"
+            type_label = "Show"
+
+    with ui.card().classes("content-card").style("width: 200px"):
+        # Poster placeholder
+        poster = item.get("poster_url")
+        if poster:
+            ui.image(poster).classes("w-full").style("height: 280px; object-fit: cover")
+        else:
+            with ui.element("div").classes("w-full flex items-center justify-center").style(
+                f"height: 280px; background: {COLORS['surface_light']}"
+            ):
+                ui.icon("movie").classes("text-5xl").style(f"color: {COLORS['text_muted']}")
+
+        with ui.column().classes("p-3 gap-1"):
+            with ui.row().classes("items-center gap-2"):
+                ui.html(f'<span class="{badge_class}">{type_label}</span>')
+                if item.get("year"):
+                    ui.label(str(item["year"])).classes("text-xs").style(f"color: {COLORS['text_muted']}")
+
+            ui.label(item.get("title", "Unknown")).classes("text-sm font-semibold truncate").style(
+                f"color: {COLORS['text']}; max-width: 180px"
+            )
+
+            # Status badge
+            status = item.get("status", "unknown")
+            status_colors = {
+                "collected": COLORS["success"],
+                "downloading": COLORS["warning"],
+                "watchlisted": COLORS["info"],
+                "ignored": COLORS["error"],
+            }
+            ui.label(status.capitalize()).classes("text-xs font-medium").style(
+                f"color: {status_colors.get(status, COLORS['text_muted'])}"
+            )
+
+            # IDs
+            ids = []
+            if item.get("imdb_id"):
+                ids.append(f"IMDB: {item['imdb_id']}")
+            if item.get("tmdb_id"):
+                ids.append(f"TMDB: {item['tmdb_id']}")
+            if ids:
+                ui.label(" | ".join(ids)).classes("text-xs").style(f"color: {COLORS['text_muted']}")
+
+
+def page_header(title, subtitle=None):
+    """Create a page header."""
+    from webapp.theme import COLORS
+    with ui.column().classes("gap-1 mb-6"):
+        ui.label(title).classes("text-2xl font-bold").style(f"color: {COLORS['text']}")
+        if subtitle:
+            ui.label(subtitle).classes("text-sm").style(f"color: {COLORS['text_muted']}")
+
+
+def empty_state(icon, message, action_label=None, action_callback=None):
+    """Display an empty state placeholder."""
+    from webapp.theme import COLORS
+    with ui.column().classes("items-center justify-center py-8 gap-3 w-full"):
+        ui.icon(icon).classes("text-4xl").style(f"color: {COLORS['text_muted']}; opacity: 0.5")
+        ui.label(message).classes("text-sm").style(f"color: {COLORS['text_muted']}")
+        if action_label and action_callback:
+            ui.button(action_label, on_click=action_callback).props("color=amber")
