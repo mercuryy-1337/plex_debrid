@@ -24,7 +24,7 @@ PLEX_USER_URL = "https://plex.tv/api/v2/user"
 PLEX_HEADERS = {
     "Accept": "application/json",
     "X-Plex-Product": "pd_reloaded",
-    "X-Plex-Version": "3.0.0",
+    "X-Plex-Version": "3.1.0",
     "X-Plex-Platform": "Web",
 }
 
