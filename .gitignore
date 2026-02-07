@@ -396,4 +396,28 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# pd_reloaded - sensitive / runtime data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
 settings.json
+settings.json.old
+old_settings.json
+config/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+env/
+.env

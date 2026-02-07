@@ -2,7 +2,7 @@
 
 > **Branch: `revamp`** — This is a work-in-progress rewrite. Expect breaking changes.
 
-A ground-up modernization of [plex_debrid](https://github.com/itsToggle/plex_debrid). Plex torrent streaming through Debrid Services, powered by [Decypharr](https://github.com/sirrobot01/decypharr), with a modern web UI.
+A ground-up modernisation of [plex_debrid](https://github.com/itsToggle/plex_debrid). Plex torrent streaming through Debrid Services, powered by [Decypharr](https://github.com/sirrobot01/decypharr), with a modern web UI.
 
 pd_reloaded replaces the legacy CLI with a full NiceGUI web frontend, SQLite database, Decypharr-only debrid pipeline, and guided onboarding — while preserving the core automation that made plex_debrid great.
 
