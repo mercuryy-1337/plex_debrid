@@ -61,11 +61,6 @@ async def render(app_state, client: Client):
 
         initial_rows = _build_rows(app_state)
 
-        if not initial_rows:
-            placeholder = ui.column().classes("w-full")
-            with placeholder:
-                empty_state("hourglass_empty", "No active downloads")
-
         table = ui.table(
             columns=_COLUMNS,
             rows=initial_rows,

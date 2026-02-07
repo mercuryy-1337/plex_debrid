@@ -168,3 +168,5 @@ Plex Watchlist / Trakt / Overseerr
 ## Credits
 
 Based on [plex_debrid](https://github.com/itsToggle/plex_debrid) by [itsToggle](https://github.com/itsToggle). This rewrite wouldn't exist without the original project and community.
+
+Search powered by a Python port of [Stremio local-search](https://github.com/Stremio/local-search) (MIT licence) — TF-IDF + Levenshtein fuzzy matching + prefix boosting for typo-tolerant title search.

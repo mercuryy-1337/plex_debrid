@@ -4,19 +4,28 @@ Cinemeta feed cache for pd_reloaded.
 Fetches https://cinemeta-catalogs.strem.io/feed.json and caches it
 in memory with a 12-hour TTL.  Used by the search bar to provide
 instant suggestions as the user types.
+
+Search is powered by a Python port of Stremio's local-search algorithm
+(https://github.com/Stremio/local-search, MIT licence) which provides
+TF-IDF scoring, Levenshtein fuzzy matching and prefix boosting so
+minor typos like "jujutsu kisen" still return the correct results.
 """
 
 import logging
 import time
 import requests
 from threading import Lock
+from typing import Optional
+
+from webapp.local_search import LocalSearch
 
 logger = logging.getLogger(__name__)
 
 FEED_URL = "https://cinemeta-catalogs.strem.io/feed.json"
 
 # Module-level cache
-_feed_items: list = []      # raw dicts from the feed
+_feed_items: list = []       # raw dicts from the feed
+_search_index: Optional[LocalSearch] = None
 _last_update: float = 0
 _lock = Lock()
 _TTL = 43200  # 12 hours
@@ -33,8 +42,8 @@ def preload_feed():
 
 
 def _refresh_feed():
-    """Fetch the cinemeta feed JSON and store the items list."""
-    global _feed_items, _last_update
+    """Fetch the cinemeta feed JSON, store items, and rebuild the search index."""
+    global _feed_items, _search_index, _last_update
 
     try:
         resp = requests.get(FEED_URL, timeout=30)
@@ -51,8 +60,34 @@ def _refresh_feed():
             items = []
 
         _feed_items = items
+
+        # Build the intelligent search index
+        # Boost by popularity so well-known titles float to the top
+        max_pop = max((item.get("popularity") or 0 for item in items), default=1) or 1
+
+        def _boost(item):
+            pop = item.get("popularity") or 0
+            rating = 0
+            try:
+                rating = float(item.get("imdbRating") or 0)
+            except (ValueError, TypeError):
+                pass
+            # Normalised popularity + small IMDB nudge
+            return math.exp((pop / max_pop) * 0.8 + (rating / 10) * 0.2)
+
+        import math
+        _search_index = LocalSearch(
+            items,
+            text_fn=lambda item: item.get("name") or "",
+            boost_fn=_boost,
+            max_edit_distance=1,
+            max_edit_distance_boost=2.0,
+            max_prefix_boost=1.5,
+            score_threshold=0.40,
+        )
+
         _last_update = time.time()
-        logger.info("Cinemeta feed loaded: %d items", len(items))
+        logger.info("Cinemeta feed loaded: %d items, search index built", len(items))
     except Exception as e:
         logger.warning("Failed to fetch cinemeta feed: %s", e)
 
@@ -70,27 +105,26 @@ def get_all() -> list:
     return _feed_items
 
 
-def search(query: str, limit: int = 20) -> list:
-    """Search the cached feed by name (case-insensitive substring match).
+def search(query: str, limit: int = 5) -> list:
+    """Search the cached feed using Stremio-style intelligent local search.
 
-    Returns up to *limit* items sorted by popularity (highest first).
+    Handles typos, partial matches and prefix queries via TF-IDF +
+    Levenshtein fuzzy matching + prefix boosting.
+
+    Returns up to *limit* items sorted by relevance score.
     """
     if not query or not query.strip():
         return []
 
     with _lock:
         _ensure_fresh()
-        items = _feed_items
+        idx = _search_index
 
-    q = query.strip().lower()
-    matches = [
-        item for item in items
-        if q in (item.get("name") or "").lower()
-    ]
+    if idx is None:
+        return []
 
-    # Sort by popularity descending, then by name
-    matches.sort(key=lambda x: (-(x.get("popularity") or 0), (x.get("name") or "").lower()))
-    return matches[:limit]
+    results = idx.search(query.strip(), max_results=limit)
+    return [item for item, _score in results]
 
 
 def search_grouped(query: str, limit_per_type: int = 20) -> dict:
@@ -103,25 +137,23 @@ def search_grouped(query: str, limit_per_type: int = 20) -> dict:
 
     with _lock:
         _ensure_fresh()
-        items = _feed_items
+        idx = _search_index
 
-    q = query.strip().lower()
+    if idx is None:
+        return {"movie": [], "series": []}
+
+    # Fetch more results than needed so we can split by type
+    results = idx.search(query.strip(), max_results=(limit_per_type * 2) + 10)
+
     movies = []
     series = []
-
-    for item in items:
-        name = (item.get("name") or "").lower()
-        if q in name:
-            t = (item.get("type") or "").lower()
-            if t == "series":
+    for item, _score in results:
+        t = (item.get("type") or "").lower()
+        if t == "series":
+            if len(series) < limit_per_type:
                 series.append(item)
-            else:
+        else:
+            if len(movies) < limit_per_type:
                 movies.append(item)
 
-    movies.sort(key=lambda x: (-(x.get("popularity") or 0), (x.get("name") or "").lower()))
-    series.sort(key=lambda x: (-(x.get("popularity") or 0), (x.get("name") or "").lower()))
-
-    return {
-        "movie": movies[:limit_per_type],
-        "series": series[:limit_per_type],
-    }
+    return {"movie": movies, "series": series}

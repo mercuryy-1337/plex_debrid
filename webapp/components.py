@@ -127,35 +127,36 @@ def create_spa_shell(app_state, initial_page, on_navigate):
 
         # Wrapper div with relative positioning so the dropdown sits underneath
         with ui.element("div").style(
-            "position: relative; flex: 1; max-width: 420px; min-width: 200px"
+            "flex: 1; max-width: 420px; min-width: 200px"
         ):
             search_input = ui.input(placeholder="Search movies & shows...").props(
                 'outlined dense dark color=amber clearable autocomplete=off'
             ).classes("w-full")
 
-            # Suggestion dropdown — positioned absolutely below the input
-            suggestions_panel = ui.column().classes("gap-0").style(
-                f"position: absolute; top: 100%; left: 0; right: 0; "
+            # Quasar QMenu popup — portals to <body> so no overflow clipping
+            suggestions_menu = ui.menu().props(
+                'no-parent-event no-focus no-refocus fit anchor="bottom left" self="top left"'
+            ).classes("no-shadow").style(
                 f"background: {COLORS['surface']}; border: 1px solid {COLORS['surface_light']}; "
-                "border-radius: 0; max-height: 360px; overflow-y: auto; z-index: 9999; "
-                "box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: none;"
+                "border-radius: 0; max-height: 360px; overflow-y: auto; "
+                "box-shadow: 0 8px 24px rgba(0,0,0,0.5);"
             )
 
-        _search_state = {"timer": None}
+        _search_state = {"suppress": False}
 
         def _show_suggestions(query_text):
-            """Build suggestion items inside the panel."""
-            suggestions_panel.clear()
+            """Build suggestion items inside the Quasar menu."""
+            suggestions_menu.clear()
             if not query_text or len(query_text) < 2:
-                suggestions_panel.set_visibility(False)
+                suggestions_menu.close()
                 return
 
-            hits = _feed_search(query_text, limit=8)
+            hits = _feed_search(query_text, limit=5)
             if not hits:
-                suggestions_panel.set_visibility(False)
+                suggestions_menu.close()
                 return
 
-            with suggestions_panel:
+            with suggestions_menu:
                 for hit in hits:
                     h_name = hit.get("name", "")
                     h_year = hit.get("releaseInfo", "")
@@ -166,8 +167,9 @@ def create_spa_shell(app_state, initial_page, on_navigate):
                     type_label = "Movie" if h_type == "movie" else "Series"
 
                     async def _pick(_, name=h_name):
+                        _search_state["suppress"] = True
                         search_input.value = name
-                        suggestions_panel.set_visibility(False)
+                        suggestions_menu.close()
                         active["page"] = "results"
                         _build_nav()
                         await on_navigate(f"results:{name}")
@@ -176,10 +178,8 @@ def create_spa_shell(app_state, initial_page, on_navigate):
                         "items-center gap-3 w-full cursor-pointer px-3 py-2"
                     ).style(
                         f"border-bottom: 1px solid {COLORS['surface_light']}; "
-                        "transition: background 0.1s"
-                    ).on("click", _pick).on(
-                        "mouseenter", lambda e, el=None: None  # hover handled by CSS
-                    ):
+                        "transition: background 0.15s"
+                    ).on("click", _pick):
                         # Tiny poster thumbnail
                         if h_poster:
                             ui.image(h_poster).style(
@@ -203,25 +203,37 @@ def create_spa_shell(app_state, initial_page, on_navigate):
                                         f'<span style="color: #F59E0B; font-size: 0.7rem">★ {h_rating}</span>'
                                     )
 
-            suggestions_panel.set_visibility(True)
+                # Attribution footer
+                ui.html(
+                    '<div style="padding: 4px 12px; text-align: right; opacity: 0.45; '
+                    'font-size: 0.65rem; border-top: 1px solid rgba(255,255,255,0.06)">'
+                    'Search by <a href="https://github.com/Stremio/local-search" '
+                    'target="_blank" style="color: #E5A00D; text-decoration: none">'
+                    'Stremio local-search</a></div>'
+                )
+
+            suggestions_menu.open()
 
         def _on_search_input(e):
-            val = (e.value or "").strip()
+            """Fires on every keystroke via on_value_change (value is synced)."""
+            if _search_state["suppress"]:
+                _search_state["suppress"] = False
+                return
+            val = (e.value or "").strip() if e.value else ""
             _show_suggestions(val)
 
         async def _on_search_enter(e):
             val = (search_input.value or "").strip()
             if not val:
                 return
-            suggestions_panel.set_visibility(False)
+            suggestions_menu.close()
             active["page"] = "results"
             _build_nav()
             await on_navigate(f"results:{val}")
 
-        search_input.on("input", _on_search_input)
+        # on_value_change fires AFTER NiceGUI syncs the model — e.value is reliable
+        search_input.on_value_change(_on_search_input)
         search_input.on("keydown.enter", _on_search_enter)
-        # Hide suggestions when input loses focus (with delay so click can register)
-        search_input.on("blur", lambda _: suggestions_panel.set_visibility(False))
 
         with ui.row().classes("items-center gap-4"):
             status_label = ui.label()
