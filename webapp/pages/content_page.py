@@ -74,7 +74,7 @@ async def render(app_state, client: Client):
                 # Group by type
                 movies = [i for i in items if i["media_type"] == "movie"]
                 shows = [i for i in items if i["media_type"] in ("show", "anime_show") and not i.get("is_anime")]
-                anime_items = [i for i in items if i.get("is_anime")]
+                anime_items = [i for i in items if i["media_type"] in ("show", "anime_show") and i.get("is_anime")]
 
                 if filter_state["type"] == "all" or filter_state["type"] == "movie":
                     if movies:
