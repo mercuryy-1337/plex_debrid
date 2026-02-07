@@ -7,7 +7,7 @@ import logging
 import requests
 from nicegui import ui, Client
 
-from webapp.components import create_layout, content_card, page_header, empty_state
+from webapp.components import content_card, page_header, empty_state
 from webapp.theme import COLORS
 from webapp.pages.dashboard import _enrich_content_items
 
@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 async def render(app_state, client: Client):
-    create_layout(app_state, active_page="content")
 
     with ui.column().classes("p-6 gap-6 w-full"):
         page_header("Content Library", "Browse all monitored and collected content")

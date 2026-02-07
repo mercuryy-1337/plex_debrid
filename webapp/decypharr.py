@@ -5,16 +5,18 @@ Decypharr exposes a qBittorrent WebAPI-compatible interface. This module
 mimics how Sonarr/Radarr interact with a qBittorrent download client:
 
   - Add torrents via /api/v2/torrents/add (multipart form w/ Basic auth)
-  - Poll /api/v2/torrents/info for torrent state
+  - Poll /api/v2/torrents/info for torrent state (unauthenticated)
   - Remove completed torrents via /api/v2/torrents/delete
   - Version check via /version
 
-Auth model (mirrors Sonarr's qBit download-client):
-  - username = user-configured host (e.g. "http://sonarr:8989" or any label)
-  - password = the category_api_key from the selected ReleaseVersion
-
-The global "Decypharr API Token" setting is no longer needed; each version
-carries its own category_api_key which is used as the Basic auth password.
+Auth model:
+  - username = user-configured Arr host (e.g. "http://sonarr:8989")
+  - password = global Decypharr API Key (stored in settings, auto-generated)
+  - All qBit /api/v2/ endpoints use HTTP Basic auth (base64 of username:password)
+  - get_torrents is unauthenticated (read-only listing)
+  - Decypharr auto-creates an Arr interface when it receives a new
+    Basic auth username:password on /api/v2/torrents/add
+  - Bearer tokens are NOT supported on qBit routes (only Decypharr's Web UI)
 """
 
 import logging
@@ -28,9 +30,9 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-def generate_category_api_key() -> str:
-    """Generate a short random API key for a category."""
-    return secrets.token_hex(12)
+def generate_api_key() -> str:
+    """Generate a random API key for Decypharr authentication."""
+    return secrets.token_hex(16)
 
 
 # ─── Torrent States (matching qBittorrent) ─────────────────────────────
@@ -85,7 +87,7 @@ class DecypharrClient:
     Args:
         base_url:  Decypharr base URL (e.g. http://localhost:8282)
         username:  Arr host identifier (user-entered, e.g. "http://10.0.0.5:8989")
-        password:  The category_api_key for the target ReleaseVersion
+        password:  Global Decypharr API key (from settings)
     """
 
     def __init__(self, base_url: str, username: str = "", password: str = ""):
@@ -95,27 +97,21 @@ class DecypharrClient:
         self.timeout = 30
         self.add_timeout = 120  # longer timeout for add operations
 
-    # ── Auth helpers ────────────────────────────────────────────────
+    # ── Auth ────────────────────────────────────────────────────────
 
     def _basic_auth(self) -> Optional[tuple]:
-        """Return (username, password) tuple for HTTP Basic auth.
+        """Return ``(username, password)`` for HTTP Basic auth.
 
-        Used only for /api/v2/torrents/add — Decypharr needs Basic auth
-        on that endpoint to identify which Arr is sending the request.
+        Decypharr's ``decodeAuthHeader`` base64-decodes and splits on ":".
+        When a new username:password pair is presented on /api/v2/torrents/add,
+        Decypharr auto-creates an Arr interface for it.
+
+        Used on all write endpoints (add, delete, setCategory).
+        get_torrents is unauthenticated.
         """
         if self.username or self.password:
             return (self.username, self.password)
         return None
-
-    def _bearer_headers(self) -> dict:
-        """Return Authorization: Bearer header using the password (api key).
-
-        Used for all read/management endpoints (torrents/info, delete, etc.).
-        Decypharr uses Bearer token auth for these, NOT Basic auth.
-        """
-        if self.password:
-            return {"Authorization": f"Bearer {self.password}"}
-        return {}
 
     # ── Version / Connection ────────────────────────────────────────
 
@@ -155,9 +151,8 @@ class DecypharrClient:
         try:
             resp = requests.get(
                 f"{self.base_url}/api/v2/torrents/info",
-                headers=self._bearer_headers(),
                 params=params,
-                timeout=self.timeout,
+                timeout=self.timeout
             )
             if resp.ok:
                 return resp.json() if resp.text else []
@@ -172,9 +167,9 @@ class DecypharrClient:
         try:
             resp = requests.get(
                 f"{self.base_url}/api/v2/torrents/properties",
-                headers=self._bearer_headers(),
                 params={"hash": torrent_hash},
                 timeout=self.timeout,
+                auth=self._basic_auth(),
             )
             return resp.json() if resp.ok else {}
         except Exception as e:
@@ -241,9 +236,9 @@ class DecypharrClient:
         try:
             resp = requests.post(
                 f"{self.base_url}/api/v2/torrents/delete",
-                headers=self._bearer_headers(),
                 data=data,
                 timeout=self.timeout,
+                auth=self._basic_auth(),
             )
             if resp.ok:
                 logger.info("Torrent removed: %s", torrent_hash[:16])
@@ -259,9 +254,9 @@ class DecypharrClient:
         try:
             resp = requests.post(
                 f"{self.base_url}/api/v2/torrents/setCategory",
-                headers=self._bearer_headers(),
                 data={"hashes": torrent_hash, "category": category},
                 timeout=self.timeout,
+                auth=self._basic_auth(),
             )
             return resp.ok
         except Exception as e:
@@ -282,8 +277,14 @@ class DecypharrClient:
     def wait_for_completion(self, torrent_hash: str,
                             timeout: int = 300,
                             poll_interval: int = 5,
-                            remove_on_complete: bool = True) -> dict:
+                            remove_on_complete: bool = True,
+                            progress_callback=None) -> dict:
         """Poll /api/v2/torrents/info until torrent completes or fails.
+
+        Args:
+            progress_callback: optional callable(state: str, progress: float)
+                called on each poll iteration with the current state and
+                progress (0.0–1.0).
 
         Returns: {"success": bool, "state": str, "torrent": dict|None}
         Removes the torrent from Decypharr history on completion.
@@ -299,7 +300,14 @@ class DecypharrClient:
 
             torrent = torrents[0] if isinstance(torrents, list) else torrents
             state = torrent.get("state", "unknown")
+            progress = torrent.get("progress", 0.0)
             last_state = state
+
+            if progress_callback:
+                try:
+                    progress_callback(state, progress)
+                except Exception:
+                    pass
 
             if TorrentState.is_completed(state):
                 logger.info("Torrent completed: %s (%s)",

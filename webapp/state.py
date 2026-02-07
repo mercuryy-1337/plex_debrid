@@ -3,11 +3,18 @@ Application state management for pd_reloaded.
 """
 
 import asyncio
+import datetime
 import logging
-from threading import Thread
+import uuid
+from threading import Thread, Lock
 from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
+
+
+# ─── Activity item status flow ──────────────────────────────────────
+# sent → downloading → downloaded → processing → completed
+ACTIVITY_STATUSES = ("sent", "downloading", "downloaded", "processing", "completed")
 
 
 class AppState:
@@ -34,6 +41,58 @@ class AppState:
 
         # Connected clients for live updates
         self._update_callbacks = []
+
+        # ── Activity queue ──────────────────────────────────────────
+        self._activity_items: Dict[str, Dict[str, Any]] = {}  # keyed by id
+        self._activity_lock = Lock()
+
+    # ── Activity helpers ────────────────────────────────────────────
+
+    def add_activity(self, *, title: str, release_title: str,
+                     info_hash: str = "", category: str = "",
+                     imdb_id: str = "") -> str:
+        """Register a new activity item (status=sent). Returns item id."""
+        item_id = uuid.uuid4().hex[:12]
+        now = datetime.datetime.now()
+        with self._activity_lock:
+            self._activity_items[item_id] = {
+                "id": item_id,
+                "title": title,             # movie / series name
+                "release_title": release_title,  # torrent name
+                "info_hash": info_hash,
+                "imdb_id": imdb_id,
+                "category": category,
+                "status": "sent",
+                "progress": 0.0,
+                "submitted_at": now,
+                "updated_at": now,
+            }
+        self._notify_updates("activity", {"action": "add", "id": item_id})
+        return item_id
+
+    def update_activity(self, item_id: str, **kwargs):
+        """Update fields on an activity item (status, progress, etc.)."""
+        with self._activity_lock:
+            item = self._activity_items.get(item_id)
+            if not item:
+                return
+            for k, v in kwargs.items():
+                item[k] = v
+            item["updated_at"] = datetime.datetime.now()
+        self._notify_updates("activity", {"action": "update", "id": item_id})
+
+    def remove_activity(self, item_id: str):
+        """Remove an activity item from the queue."""
+        with self._activity_lock:
+            self._activity_items.pop(item_id, None)
+        self._notify_updates("activity", {"action": "remove", "id": item_id})
+
+    def get_activities(self) -> List[Dict[str, Any]]:
+        """Return all activity items sorted newest-first."""
+        with self._activity_lock:
+            items = list(self._activity_items.values())
+        items.sort(key=lambda x: x["submitted_at"], reverse=True)
+        return items
 
     def add_log(self, message: str):
         """Add a log message to the automation log buffer."""

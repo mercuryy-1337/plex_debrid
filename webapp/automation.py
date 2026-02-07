@@ -294,10 +294,10 @@ class AutomationEngine:
         # Decypharr
         decypharr_url = db.get_setting("Decypharr Base URL", "")
         decypharr_username = db.get_setting("Decypharr Username", "")
+        decypharr_api_key = db.get_setting("Decypharr API Key", "")
         if decypharr_url:
             from webapp.decypharr import DecypharrClient
-            # Password comes from version at download time; use empty for connection test
-            client = DecypharrClient(decypharr_url, username=decypharr_username, password="")
+            client = DecypharrClient(decypharr_url, username=decypharr_username, password=decypharr_api_key)
             ok, info = client.test_connection()
             if ok:
                 self.app_state.add_log(f"Decypharr connected at {decypharr_url} (v{info})")

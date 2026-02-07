@@ -10,7 +10,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from nicegui import ui, Client
 
-from webapp.components import create_layout, page_header
+from webapp.components import page_header
 from webapp.theme import COLORS
 from webapp.plex_auth import (
     generate_client_id, create_pin, wait_for_auth,
@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 async def render(app_state, client: Client):
-    create_layout(app_state, active_page="settings")
 
     with ui.column().classes("p-6 gap-6 w-full"):
         page_header("Settings", "Configure all aspects of pd_reloaded")
@@ -463,13 +462,14 @@ async def _render_debrid_settings(app_state):
     with ui.card().classes("w-full p-4"):
         ui.label("Decypharr").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
         ui.label(
-            "Decypharr handles all debrid operations. Configure your Decypharr instance URL and Arr host below. "
-            "Each version's API key is used as the password for authentication."
+            "Decypharr handles all debrid operations. Configure your Decypharr instance URL, Arr host, "
+            "and API key below. The API key authenticates all requests to Decypharr."
         ).classes("text-sm").style(f"color: {COLORS['text_muted']}")
         ui.separator().classes("my-2")
 
         decypharr_url = db.get_setting("Decypharr Base URL", "")
         decypharr_username = db.get_setting("Decypharr Username", "")
+        decypharr_api_key = db.get_setting("Decypharr API Key", "")
 
         dec_url = ui.input(
             "Decypharr URL", value=decypharr_url,
@@ -483,6 +483,26 @@ async def _render_debrid_settings(app_state):
         ui.label(
             "This is the hostname/IP that Decypharr sees as the Arr client. "
             "Typically your machine's IP + Arr port (e.g. http://10.0.0.5:8989)."
+        ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
+
+        # Global API Key
+        with ui.row().classes("w-full gap-3 items-end"):
+            dec_api_key = ui.input(
+                "API Key", value=decypharr_api_key,
+            ).classes("flex-1").props("outlined dark color=amber readonly")
+
+            async def refresh_key():
+                from webapp.decypharr import generate_api_key
+                new_key = generate_api_key()
+                dec_api_key.value = new_key
+                db.set_setting("Decypharr API Key", new_key, "debrid")
+                ui.notify("API key regenerated", type="positive")
+
+            ui.button("Regenerate", on_click=refresh_key, icon="vpn_key").props(
+                "color=blue push dense")
+        ui.label(
+            "This key is used as the password for Basic auth on all Decypharr qBit API requests. "
+            "Decypharr auto-creates an Arr interface when it receives a new username:password pair."
         ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
         # Connection status row
@@ -513,6 +533,7 @@ async def _render_debrid_settings(app_state):
             async def save_decypharr():
                 db.set_setting("Decypharr Base URL", dec_url.value.strip(), "debrid")
                 db.set_setting("Decypharr Username", dec_username.value.strip(), "debrid")
+                db.set_setting("Decypharr API Key", dec_api_key.value.strip(), "debrid")
                 ui.notify("Decypharr settings saved", type="positive")
 
             ui.button("Save", on_click=save_decypharr, icon="save").props("color=amber push dense")
@@ -744,7 +765,6 @@ async def _render_version_settings(app_state):
                                 "name": f"{src['name']} (copy)",
                                 "language": src.get("language", "en"),
                                 "category": f"{src.get('category', 'default')}_copy",
-                                "category_api_key": "",
                                 "triggers": [list(t) for t in src.get("triggers", [])],
                                 "rules": [list(r) for r in src.get("rules", [])],
                             }
@@ -779,7 +799,6 @@ async def _render_version_settings(app_state):
                 v.get("language", "en"),
                 v.get("rules", []),
                 v.get("category", "default"),
-                v.get("category_api_key", ""),
             ])
         settings_path = os.path.join(app_state.config_dir, "settings.json")
         try:
@@ -858,12 +877,10 @@ async def _render_version_settings(app_state):
 
     def _open_version_editor(ver_data, is_new=False):
         """Open a dialog to edit a version's triggers, rules, language, name, and category."""
-        from webapp.decypharr import generate_category_api_key
         edit_state = {
             "name": ver_data["name"],
             "language": ver_data.get("language", "en"),
             "category": ver_data.get("category", ""),
-            "category_api_key": ver_data.get("category_api_key", ""),
             "triggers": [list(t) for t in ver_data.get("triggers", [])],
             "rules": [list(r) for r in ver_data.get("rules", [])],
         }
@@ -892,25 +909,6 @@ async def _render_version_settings(app_state):
                             placeholder="e.g. movies, shows, anime"
                         ).classes("flex-1").props("outlined dense dark color=amber")
                         ui.label("*").classes("text-sm mt-2").style(f"color: {COLORS['error']}")
-
-                    # Category API Key
-                    with ui.row().classes("w-full gap-3 items-center"):
-                        # Auto-generate key if missing
-                        if not edit_state["category_api_key"]:
-                            edit_state["category_api_key"] = generate_category_api_key()
-
-                        api_key_input = ui.input(
-                            "Category API Key",
-                            value=edit_state["category_api_key"],
-                        ).classes("flex-1").props("outlined dense dark color=amber readonly")
-
-                        async def gen_key():
-                            new_key = generate_category_api_key()
-                            api_key_input.value = new_key
-                            edit_state["category_api_key"] = new_key
-
-                        ui.button("Generate Key", on_click=gen_key, icon="vpn_key").props(
-                            "color=blue push dense size=sm")
 
                     # ── Triggers Section ──
                     with ui.card().classes("w-full p-3").style(f"background: {COLORS['surface_light']}"):
@@ -1074,7 +1072,6 @@ async def _render_version_settings(app_state):
                         "name": name_input.value.strip(),
                         "language": lang_input.value.strip() or "en",
                         "category": category_input.value.strip(),
-                        "category_api_key": api_key_input.value.strip() or edit_state["category_api_key"],
                         "triggers": edit_state["triggers"],
                         "rules": edit_state["rules"],
                     }

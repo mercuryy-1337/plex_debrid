@@ -675,6 +675,8 @@ async def save_and_finish(wizard, app_state):
     if wizard.get("decypharr_url"):
         db.set_setting("Decypharr Base URL", wizard["decypharr_url"].strip(), "debrid")
         db.set_setting("Decypharr Username", wizard.get("decypharr_username", "").strip(), "debrid")
+        from webapp.decypharr import generate_api_key
+        db.set_setting("Decypharr API Key", generate_api_key(), "debrid")
 
     # Save scraper sources
     for src in wizard.get("scraper_sources", ["torrentio"]):
@@ -703,7 +705,6 @@ async def save_and_finish(wizard, app_state):
         ["seeders", "preference", "highest", ""],
         ["size", "requirement", ">=", "0.1"],
     ]
-    from webapp.decypharr import generate_category_api_key
     db.add_release_version(
         name="1080p SDR",
         enabled=True,
@@ -712,7 +713,6 @@ async def save_and_finish(wizard, app_state):
         rules=default_rules,
         sort_order=0,
         category="default",
-        category_api_key=generate_category_api_key(),
     )
 
     # Mark setup complete

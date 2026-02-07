@@ -11,7 +11,7 @@ import regex
 from threading import Thread
 from nicegui import ui, Client
 
-from webapp.components import create_layout, page_header, empty_state
+from webapp.components import page_header, empty_state
 from webapp.theme import COLORS
 
 logger = logging.getLogger(__name__)
@@ -114,7 +114,6 @@ def _is_anime_by_xml(title):
 
 
 async def render(app_state, client: Client):
-    create_layout(app_state, active_page="scraper")
 
     with ui.column().classes("p-6 gap-6 w-full"):
         page_header("Manual Scraper", "Search for and download content manually")
@@ -371,7 +370,6 @@ async def _download_release(app_state, release_data, search_state, stream=True):
                 ver_id = v.get("id")
                 ver_name = v.get("name", "Unknown")
                 cat = v.get("category", "default")
-                api_key = v.get("category_api_key", "")
 
                 async def pick_version(version=v):
                     ver_dlg.close()
@@ -386,9 +384,6 @@ async def _download_release(app_state, release_data, search_state, stream=True):
                     with ui.column().classes("gap-0"):
                         ui.label(ver_name).classes("text-sm font-medium").style(f"color: {COLORS['text']}")
                         ui.label(f"Category: {cat}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
-                        if not api_key:
-                            ui.label("⚠ No API key configured").classes("text-xs").style(
-                                f"color: {COLORS['error']}")
 
             ui.button("Cancel", on_click=ver_dlg.close).props("flat color=grey").classes("mt-2")
         ver_dlg.open()
@@ -427,20 +422,20 @@ async def _proceed_download(app_state, release, release_data, search_state, vers
         release.type = detected_type
         release.Releases = [release]
 
+        # Resolve the display title before sending to executor
+        cinemeta_name = search_state.get("cinemeta_name") or query or release.title
+        imdb_id = search_state.get("imdb_id") or ""
+
         # Run download via Decypharr in background (pass full version dict)
         dl_result = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: _execute_download(app_state, release, stream, query, media_type, version)
+            None, lambda: _execute_download(app_state, release, stream, cinemeta_name, media_type, version, imdb_id=imdb_id)
         )
 
-        cinemeta_name = search_state.get("cinemeta_name") or query or release.title
         dl_success = dl_result.get("success", False) if isinstance(dl_result, dict) else bool(dl_result)
         dl_error = dl_result.get("error") if isinstance(dl_result, dict) else None
 
         if dl_success:
-            ui.notify(f"Sent to Decypharr: {release.title[:60]}...", type="positive")
-
             final_type = media_type if media_type != "auto" else detected_type
-            imdb_id = search_state.get("imdb_id")
             tmdb_id = search_state.get("tmdb_id")
 
             # If we still don't have IDs, try resolving now
@@ -495,7 +490,7 @@ async def _proceed_download(app_state, release, release_data, search_state, vers
                 logger.debug("Failed to upsert content item for manual download")
         else:
             reason = dl_error or "Unknown error"
-            ui.notify(f"Download failed: {reason}", type="negative", timeout=8000)
+            ui.notify(f"Download failed: {reason}", type="negative", close_button=True)
             # Log the failure with reason
             app_state.db.add_download_log(
                 title=cinemeta_name,
@@ -513,34 +508,40 @@ async def _proceed_download(app_state, release, release_data, search_state, vers
         ui.notify(f"Download error: {str(e)}", type="negative")
 
 
-def _execute_download(app_state, release, stream, query, media_type, version):
-    """Execute the download via Decypharr using version-specific auth.
+def _execute_download(app_state, release, stream, cinemeta_name, media_type, version, imdb_id=""):
+    """Execute the download via Decypharr using global API key.
+
+    Tracks the download lifecycle on app_state's activity queue:
+    sent → downloading → downloaded → processing → (removed).
 
     Args:
-        version: dict with keys: category, category_api_key, name, etc.
+        cinemeta_name: resolved movie/show title from cinemeta.
+        version: dict with keys: category, name, etc.
+        imdb_id: optional IMDB ID for display on the activity page.
 
-    Returns a dict: {"success": bool, "error": str or None}
+    Returns a dict: {"success": bool, "error": str or None, "poll_completed": bool}
     """
+    activity_id = None
     try:
-        from webapp.decypharr import DecypharrClient
+        from webapp.decypharr import DecypharrClient, TorrentState
 
         decypharr_url = app_state.db.get_setting("Decypharr Base URL", "")
         decypharr_username = app_state.db.get_setting("Decypharr Username", "")
+        api_key = app_state.db.get_setting("Decypharr API Key", "")
 
         if not decypharr_url:
             msg = "Decypharr URL not configured — go to Settings → Decypharr"
             logger.error(msg)
             return {"success": False, "error": msg}
 
-        category = version.get("category", "default")
-        api_key = version.get("category_api_key", "")
-
         if not api_key:
-            msg = f"No API key set for version '{version.get('name', '?')}' — configure it in Settings → Versions"
+            msg = "No Decypharr API Key configured — go to Settings → Decypharr"
             logger.error(msg)
             return {"success": False, "error": msg}
 
-        # Auth: username = user-entered host, password = version's category_api_key
+        category = version.get("category", "default")
+
+        # Auth: username = Arr host, password = global API key
         client = DecypharrClient(decypharr_url, username=decypharr_username, password=api_key)
 
         # Get magnet/hash from the release
@@ -584,14 +585,42 @@ def _execute_download(app_state, release, stream, query, media_type, version):
         logger.info("Decypharr download sent: %s → version=%s category=%s",
                      release.title[:60], version.get("name", "?"), category)
 
-        # Poll for completion and remove when done
+        # ── Activity: mark as sent ──────────────────────────────────
+        activity_id = app_state.add_activity(
+            title=cinemeta_name,
+            release_title=release.title,
+            info_hash=info_hash or "",
+            category=category,
+            imdb_id=imdb_id,
+        )
+
+        out = {"success": True, "error": None, "sent_title": release.title, "poll_completed": False}
+
+        # Poll for completion and update activity along the way
         if info_hash:
+            def _on_progress(state, progress):
+                if TorrentState.is_downloading(state):
+                    app_state.update_activity(activity_id, status="downloading", progress=progress)
+                elif TorrentState.is_completed(state):
+                    app_state.update_activity(activity_id, status="downloaded", progress=1.0)
+
             try:
                 poll_result = client.wait_for_completion(
-                    info_hash, timeout=300, poll_interval=5, remove_on_complete=True,
+                    info_hash, timeout=300, poll_interval=5,
+                    remove_on_complete=True,
+                    progress_callback=_on_progress,
                 )
                 if poll_result["success"]:
                     logger.info("Torrent completed and removed from Decypharr: %s", info_hash[:16])
+                    out["poll_completed"] = True
+                    # Mark processing briefly, then completed
+                    app_state.update_activity(activity_id, status="processing", progress=1.0)
+                    import time as _time; _time.sleep(2)
+                    app_state.update_activity(activity_id, status="completed", progress=1.0)
+                    # Remove from activity queue after a short visible delay
+                    _time.sleep(5)
+                    app_state.remove_activity(activity_id)
+                    activity_id = None  # prevent double-remove in finally
                 else:
                     logger.warning("Torrent poll ended: %s (state: %s)",
                                    info_hash[:16], poll_result["state"])
@@ -599,9 +628,21 @@ def _execute_download(app_state, release, stream, query, media_type, version):
                 logger.debug("Torrent polling error (non-fatal): %s", poll_err)
         else:
             logger.info("No info_hash available — skipping completion polling")
+            # No hash to poll — mark completed directly
+            app_state.update_activity(activity_id, status="completed", progress=1.0)
+            import time as _time; _time.sleep(5)
+            app_state.remove_activity(activity_id)
+            activity_id = None
 
-        return {"success": True, "error": None}
+        return out
 
     except Exception as e:
         logger.exception("Download execution error")
         return {"success": False, "error": str(e)}
+    finally:
+        # Ensure activity item is cleaned up on any failure
+        if activity_id:
+            try:
+                app_state.remove_activity(activity_id)
+            except Exception:
+                pass

@@ -20,7 +20,16 @@ ANIMETITLES_URL = "https://raw.githubusercontent.com/Anime-Lists/anime-lists/mas
 _anime_titles: set = set()
 _last_update: float = 0
 _lock = Lock()
-_TTL = 3600  # 1 hour
+_TTL = 43200  # 12 hours
+
+
+def preload_cache():
+    """Eagerly fetch and cache the animetitles list.
+
+    Call once at app startup so the first anime check is instant.
+    """
+    with _lock:
+        _refresh_cache()
 
 
 def _refresh_cache():

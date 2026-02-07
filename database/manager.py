@@ -374,7 +374,6 @@ class DatabaseManager:
             return [{
                 "id": v.id, "name": v.name, "enabled": v.enabled,
                 "category": v.category or "default",
-                "category_api_key": v.category_api_key or "",
                 "triggers": json.loads(v.triggers) if v.triggers else [],
                 "language": v.language,
                 "rules": json.loads(v.rules) if v.rules else [],

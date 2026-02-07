@@ -1,11 +1,13 @@
 """
 Main NiceGUI web application for pd_reloaded.
+
+Uses a single-page-application shell: header and sidebar are rendered once,
+only the content area is swapped when navigating between pages.
 """
 
 import os
 import sys
 import logging
-import asyncio
 from nicegui import ui, app, Client
 
 # Add project root to path
@@ -19,6 +21,27 @@ logger = logging.getLogger(__name__)
 
 # Global app state
 app_state = AppState()
+
+# ── Page registry ───────────────────────────────────────────────────
+_PAGE_MODULES = {}  # populated lazily in create_app
+
+
+def _get_page_modules():
+    """Return {name: module} mapping, importing once."""
+    if not _PAGE_MODULES:
+        from webapp.pages import (
+            dashboard, content_page, activity_page,
+            scraper_page, settings_page, logs_page,
+        )
+        _PAGE_MODULES.update({
+            "dashboard": dashboard,
+            "content": content_page,
+            "activity": activity_page,
+            "scraper": scraper_page,
+            "settings": settings_page,
+            "logs": logs_page,
+        })
+    return _PAGE_MODULES
 
 
 def create_app(config_dir="."):
@@ -38,50 +61,49 @@ def create_app(config_dir="."):
 
     app_state.needs_onboarding = needs_onboarding
 
-    # Register pages
-    from webapp.pages import onboarding, dashboard, settings_page, scraper_page, content_page, logs_page
+    # Pre-load animetitles cache in background thread so first check is instant
+    from threading import Thread as _Thr
+    from webapp.anime_check import preload_cache as _preload_anime
+    _Thr(target=_preload_anime, daemon=True).start()
 
-    @ui.page("/")
-    async def index(client: Client):
-        if app_state.needs_onboarding:
-            return ui.navigate.to("/onboarding")
-        return ui.navigate.to("/dashboard")
+    # ── Onboarding (standalone — no SPA shell) ──────────────────────
+    from webapp.pages import onboarding
 
     @ui.page("/onboarding")
     async def onboarding_route(client: Client):
         await onboarding.render(app_state, client)
 
-    @ui.page("/dashboard")
-    async def dashboard_route(client: Client):
+    # ── SPA shell for all other pages ───────────────────────────────
+    @ui.page("/")
+    @ui.page("/{_path:path}")
+    async def spa_route(client: Client, _path: str = ""):
         if app_state.needs_onboarding:
             return ui.navigate.to("/onboarding")
-        await dashboard.render(app_state, client)
 
-    @ui.page("/content")
-    async def content_route(client: Client):
-        if app_state.needs_onboarding:
-            return ui.navigate.to("/onboarding")
-        await content_page.render(app_state, client)
+        page = _path.strip("/") or "dashboard"
+        pages = _get_page_modules()
+        if page not in pages:
+            page = "dashboard"
 
-    @ui.page("/scraper")
-    async def scraper_route(client: Client):
-        if app_state.needs_onboarding:
-            return ui.navigate.to("/onboarding")
-        await scraper_page.render(app_state, client)
+        from webapp.components import create_spa_shell
 
-    @ui.page("/settings")
-    async def settings_route(client: Client):
-        if app_state.needs_onboarding:
-            return ui.navigate.to("/onboarding")
-        await settings_page.render(app_state, client)
+        async def navigate(page_name: str):
+            """Swap only the content area — sidebar stays put."""
+            content_area.clear()
+            mod = pages.get(page_name)
+            if mod:
+                with content_area:
+                    await mod.render(app_state, client)
+            ui.run_javascript(
+                f"window.history.pushState(null, '', '/{page_name}')")
 
-    @ui.page("/logs")
-    async def logs_route(client: Client):
-        if app_state.needs_onboarding:
-            return ui.navigate.to("/onboarding")
-        await logs_page.render(app_state, client)
+        content_area = create_spa_shell(app_state, page, navigate)
 
-    # API endpoints for Plex OAuth callback
+        # Render initial page
+        with content_area:
+            await pages[page].render(app_state, client)
+
+    # ── API endpoints ───────────────────────────────────────────────
     @app.get("/api/plex/callback")
     async def plex_callback():
         from starlette.responses import HTMLResponse

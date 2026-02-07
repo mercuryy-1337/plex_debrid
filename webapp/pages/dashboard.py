@@ -8,7 +8,7 @@ import logging
 import requests
 from nicegui import ui, Client
 
-from webapp.components import create_layout, stat_card, content_card, page_header, empty_state
+from webapp.components import stat_card, content_card, page_header, empty_state
 from webapp.theme import COLORS
 from webapp.automation import AutomationEngine
 
@@ -69,7 +69,6 @@ def _enrich_content_items(db, items):
 
 
 async def render(app_state, client: Client):
-    create_layout(app_state, active_page="dashboard")
     engine = AutomationEngine(app_state)
 
     with ui.column().classes("p-6 gap-6 w-full"):

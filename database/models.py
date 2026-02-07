@@ -208,7 +208,6 @@ class ReleaseVersion(Base):
     name = Column(String(200), nullable=False)
     enabled = Column(Boolean, default=True)
     category = Column(String(100), nullable=False, default="default")
-    category_api_key = Column(String(64), nullable=True)
     triggers = Column(Text, nullable=True)  # JSON
     language = Column(String(10), default="en")
     rules = Column(Text, nullable=True)  # JSON

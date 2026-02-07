@@ -5,14 +5,13 @@ Download/activity logs page for pd_reloaded.
 import logging
 from nicegui import ui, Client
 
-from webapp.components import create_layout, page_header, empty_state
+from webapp.components import page_header, empty_state
 from webapp.theme import COLORS
 
 logger = logging.getLogger(__name__)
 
 
 async def render(app_state, client: Client):
-    create_layout(app_state, active_page="logs")
 
     with ui.column().classes("p-6 gap-6 w-full"):
         page_header("Download Logs", "View all download activity and content tracking")

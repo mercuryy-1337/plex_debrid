@@ -23,7 +23,7 @@ pd_reloaded replaces the legacy CLI with a full NiceGUI web frontend, SQLite dat
 - Supports **Real-Debrid, AllDebrid, Premiumize, Debrid-Link** etc. via Decypharr
 - Per-version auth: each version profile carries its own **category + API key** (no global token)
 - Torrent state polling (`/api/v2/torrents/info`) with automatic cleanup of completed downloads
-- Auth model mirrors Sonarr/Radarr's qBittorrent download client (Basic auth for add, Bearer for management)
+- Auth model mirrors Sonarr/Radarr's qBittorrent download client (Basic auth on all qBit API endpoints)
 
 ### Manual Scrape & Download
 - **Search & download directly from the web UI** — search by title, browse results, pick a version, and send to Decypharr
