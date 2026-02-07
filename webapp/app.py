@@ -37,6 +37,7 @@ def _get_page_modules():
             "dashboard": dashboard,
             "content": content_page,
             "activity": activity_page,
+            "results": scraper_page,
             "scraper": scraper_page,
             "settings": settings_page,
             "logs": logs_page,
@@ -66,6 +67,10 @@ def create_app(config_dir="."):
     from webapp.anime_check import preload_cache as _preload_anime
     _Thr(target=_preload_anime, daemon=True).start()
 
+    # Pre-load cinemeta feed cache so search suggestions are instant
+    from webapp.cinemeta_feed import preload_feed as _preload_feed
+    _Thr(target=_preload_feed, daemon=True).start()
+
     # ── Onboarding (standalone — no SPA shell) ──────────────────────
     from webapp.pages import onboarding
 
@@ -90,18 +95,36 @@ def create_app(config_dir="."):
         async def navigate(page_name: str):
             """Swap only the content area — sidebar stays put."""
             content_area.clear()
+            # Support "results:query" for search navigation
+            search_query = ""
+            if page_name.startswith("results:"):
+                search_query = page_name.split(":", 1)[1]
+                page_name = "results"
             mod = pages.get(page_name)
             if mod:
                 with content_area:
-                    await mod.render(app_state, client)
+                    if page_name == "results" and search_query:
+                        await mod.render(app_state, client, search_query=search_query)
+                    else:
+                        await mod.render(app_state, client)
+            url_path = page_name
+            if page_name == "results" and search_query:
+                from urllib.parse import quote
+                url_path = f"results?q={quote(search_query)}"
             ui.run_javascript(
-                f"window.history.pushState(null, '', '/{page_name}')")
+                f"window.history.pushState(null, '', '/{url_path}')")
 
         content_area = create_spa_shell(app_state, page, navigate)
 
         # Render initial page
         with content_area:
-            await pages[page].render(app_state, client)
+            if page == "results":
+                # Extract query from ?q= parameter if present
+                from starlette.requests import Request as _Req
+                raw_q = client.request.query_params.get("q", "") if hasattr(client, "request") else ""
+                await pages[page].render(app_state, client, search_query=raw_q)
+            else:
+                await pages[page].render(app_state, client)
 
     # ── API endpoints ───────────────────────────────────────────────
     @app.get("/api/plex/callback")

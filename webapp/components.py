@@ -15,7 +15,6 @@ def create_layout(app_state, active_page="dashboard"):
         {"icon": "dashboard", "label": "Dashboard", "page": "dashboard"},
         {"icon": "movie", "label": "Content", "page": "content"},
         {"icon": "sync", "label": "Activity", "page": "activity"},
-        {"icon": "search", "label": "Scraper", "page": "scraper"},
         {"icon": "settings", "label": "Settings", "page": "settings"},
         {"icon": "article", "label": "Logs", "page": "logs"},
     ]
@@ -108,7 +107,6 @@ def create_spa_shell(app_state, initial_page, on_navigate):
         {"icon": "dashboard", "label": "Dashboard", "page": "dashboard"},
         {"icon": "movie", "label": "Content", "page": "content"},
         {"icon": "sync", "label": "Activity", "page": "activity"},
-        {"icon": "search", "label": "Scraper", "page": "scraper"},
         {"icon": "settings", "label": "Settings", "page": "settings"},
         {"icon": "article", "label": "Logs", "page": "logs"},
     ]
@@ -122,6 +120,108 @@ def create_spa_shell(app_state, initial_page, on_navigate):
             ui.label("🎬").classes("text-xl")
             ui.label("pd_reloaded").classes("text-lg font-bold").style(f"color: {COLORS['primary']}")
             ui.label(f"v{app_version}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
+
+        # ── Search bar ──────────────────────────────────────────────
+        from webapp.cinemeta_feed import search as _feed_search
+        import html as _html
+
+        # Wrapper div with relative positioning so the dropdown sits underneath
+        with ui.element("div").style(
+            "position: relative; flex: 1; max-width: 420px; min-width: 200px"
+        ):
+            search_input = ui.input(placeholder="Search movies & shows...").props(
+                'outlined dense dark color=amber clearable autocomplete=off'
+            ).classes("w-full")
+
+            # Suggestion dropdown — positioned absolutely below the input
+            suggestions_panel = ui.column().classes("gap-0").style(
+                f"position: absolute; top: 100%; left: 0; right: 0; "
+                f"background: {COLORS['surface']}; border: 1px solid {COLORS['surface_light']}; "
+                "border-radius: 0 0 8px 8px; max-height: 360px; overflow-y: auto; z-index: 9999; "
+                "box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: none;"
+            )
+
+        _search_state = {"timer": None}
+
+        def _show_suggestions(query_text):
+            """Build suggestion items inside the panel."""
+            suggestions_panel.clear()
+            if not query_text or len(query_text) < 2:
+                suggestions_panel.set_visibility(False)
+                return
+
+            hits = _feed_search(query_text, limit=8)
+            if not hits:
+                suggestions_panel.set_visibility(False)
+                return
+
+            with suggestions_panel:
+                for hit in hits:
+                    h_name = hit.get("name", "")
+                    h_year = hit.get("releaseInfo", "")
+                    h_type = hit.get("type", "movie")
+                    h_poster = hit.get("poster", "")
+                    h_rating = hit.get("imdbRating", "")
+                    type_icon = "movie" if h_type == "movie" else "tv"
+                    type_label = "Movie" if h_type == "movie" else "Series"
+
+                    async def _pick(_, name=h_name):
+                        search_input.value = name
+                        suggestions_panel.set_visibility(False)
+                        active["page"] = "results"
+                        _build_nav()
+                        await on_navigate(f"results:{name}")
+
+                    with ui.row().classes(
+                        "items-center gap-3 w-full cursor-pointer px-3 py-2"
+                    ).style(
+                        f"border-bottom: 1px solid {COLORS['surface_light']}; "
+                        "transition: background 0.1s"
+                    ).on("click", _pick).on(
+                        "mouseenter", lambda e, el=None: None  # hover handled by CSS
+                    ):
+                        # Tiny poster thumbnail
+                        if h_poster:
+                            ui.image(h_poster).style(
+                                "width: 32px; height: 46px; object-fit: cover; border-radius: 4px; flex-shrink: 0"
+                            )
+                        else:
+                            ui.icon(type_icon).style(
+                                f"color: {COLORS['text_muted']}; font-size: 1.4rem; width: 32px; text-align: center"
+                            )
+                        with ui.column().classes("gap-0 flex-1 min-w-0"):
+                            ui.label(h_name).classes("text-sm font-medium truncate").style(
+                                f"color: {COLORS['text']}")
+                            with ui.row().classes("items-center gap-2"):
+                                ui.label(type_label).classes("text-xs").style(
+                                    f"color: {COLORS['primary']}")
+                                if h_year:
+                                    ui.label(h_year).classes("text-xs").style(
+                                        f"color: {COLORS['text_muted']}")
+                                if h_rating:
+                                    ui.html(
+                                        f'<span style="color: #F59E0B; font-size: 0.7rem">★ {h_rating}</span>'
+                                    )
+
+            suggestions_panel.set_visibility(True)
+
+        def _on_search_input(e):
+            val = (e.value or "").strip()
+            _show_suggestions(val)
+
+        async def _on_search_enter(e):
+            val = (search_input.value or "").strip()
+            if not val:
+                return
+            suggestions_panel.set_visibility(False)
+            active["page"] = "results"
+            _build_nav()
+            await on_navigate(f"results:{val}")
+
+        search_input.on("input", _on_search_input)
+        search_input.on("keydown.enter", _on_search_enter)
+        # Hide suggestions when input loses focus (with delay so click can register)
+        search_input.on("blur", lambda _: suggestions_panel.set_visibility(False))
 
         with ui.row().classes("items-center gap-4"):
             status_label = ui.label()
