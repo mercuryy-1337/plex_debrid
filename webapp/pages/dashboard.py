@@ -210,7 +210,7 @@ async def render(app_state, client: Client):
                     "flat color=grey size=sm")
 
             log_area = ui.column().classes("p-3 gap-0 max-h-64 overflow-y-auto w-full").style(
-                f"background: {COLORS['background']}; border-radius: 8px; font-family: 'JetBrains Mono', monospace"
+                f"background: {COLORS['background']}; border-radius: 0; font-family: 'JetBrains Mono', monospace"
             )
             with log_area:
                 for entry in app_state.automation_logs[-20:]:

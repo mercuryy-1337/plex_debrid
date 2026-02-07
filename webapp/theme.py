@@ -39,7 +39,7 @@ CSS = """
     .q-card {
         background-color: var(--surface) !important;
         border: 1px solid rgba(255,255,255,0.06) !important;
-        border-radius: 10px !important;
+        border-radius: 0 !important;
         padding: 0 !important;
     }
     
@@ -84,7 +84,7 @@ CSS = """
         margin-bottom: 0 !important;
     }
     .q-field--outlined .q-field__control {
-        border-radius: 6px !important;
+        border-radius: 0 !important;
     }
     .q-field--dense .q-field__control {
         min-height: 36px !important;
@@ -98,7 +98,7 @@ CSS = """
     .stat-card {
         background: linear-gradient(135deg, var(--surface) 0%, var(--surface-light) 100%) !important;
         border: 1px solid rgba(255,255,255,0.08) !important;
-        border-radius: 12px !important;
+        border-radius: 0 !important;
         padding: 16px !important;
         transition: transform 0.2s ease, box-shadow 0.2s ease !important;
     }
@@ -111,7 +111,7 @@ CSS = """
     .content-card {
         background: var(--surface) !important;
         border: 1px solid rgba(255,255,255,0.06) !important;
-        border-radius: 10px !important;
+        border-radius: 0 !important;
         overflow: hidden !important;
         transition: transform 0.2s ease, box-shadow 0.2s ease !important;
         padding: 0 !important;
@@ -123,7 +123,7 @@ CSS = """
     }
     
     .sidebar-item {
-        border-radius: 8px !important;
+        border-radius: 0 !important;
         margin: 2px 8px !important;
         transition: background-color 0.2s ease !important;
     }
@@ -140,7 +140,7 @@ CSS = """
     .onboarding-step {
         background: var(--surface) !important;
         border: 1px solid rgba(255,255,255,0.06) !important;
-        border-radius: 16px !important;
+        border-radius: 0 !important;
         padding: 32px !important;
     }
     
@@ -148,7 +148,7 @@ CSS = """
         background: linear-gradient(135deg, #7C3AED, #DB2777) !important;
         color: white !important;
         padding: 2px 8px !important;
-        border-radius: 4px !important;
+        border-radius: 0 !important;
         font-size: 0.7rem !important;
         font-weight: 600 !important;
     }
@@ -157,7 +157,7 @@ CSS = """
         background: linear-gradient(135deg, #2563EB, #7C3AED) !important;
         color: white !important;
         padding: 2px 8px !important;
-        border-radius: 4px !important;
+        border-radius: 0 !important;
         font-size: 0.7rem !important;
         font-weight: 600 !important;
     }
@@ -166,7 +166,7 @@ CSS = """
         background: linear-gradient(135deg, #059669, #2563EB) !important;
         color: white !important;
         padding: 2px 8px !important;
-        border-radius: 4px !important;
+        border-radius: 0 !important;
         font-size: 0.7rem !important;
         font-weight: 600 !important;
     }
@@ -181,6 +181,10 @@ CSS = """
     
     .q-btn--flat {
         text-transform: none !important;
+    }
+
+    .q-btn {
+        border-radius: 0 !important;
     }
     
     .nicegui-content {
@@ -245,7 +249,7 @@ CSS = """
     }
     ::-webkit-scrollbar-thumb {
         background: var(--surface-light);
-        border-radius: 3px;
+        border-radius: 0;
     }
     ::-webkit-scrollbar-thumb:hover {
         background: var(--text-muted);

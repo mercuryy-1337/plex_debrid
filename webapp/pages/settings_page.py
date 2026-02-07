@@ -73,7 +73,7 @@ async def _render_plex_settings(app_state):
         if plex_users:
             for user in plex_users:
                 with ui.card().classes("w-full p-4").style(
-                    f"background: {COLORS['surface_light']}; border-radius: 8px"
+                    f"background: {COLORS['surface_light']}; border-radius: 0"
                 ):
                     # ── User header row ──
                     with ui.row().classes("items-center gap-4 w-full"):
@@ -344,7 +344,7 @@ async def _render_content_settings(app_state):
                 ui.label("Connected Trakt accounts:").classes("text-xs").style(f"color: {COLORS['text_muted']}")
                 for u in trakt_users:
                     with ui.row().classes("items-center gap-2 p-1 px-2").style(
-                        f"background: {COLORS['surface_light']}; border-radius: 6px"
+                        f"background: {COLORS['surface_light']}; border-radius: 0"
                     ):
                         ui.icon("person", size="sm").style(f"color: {COLORS['primary']}")
                         ui.label(u["username"]).classes("text-sm").style(f"color: {COLORS['text']}")
@@ -716,7 +716,7 @@ async def _render_version_settings(app_state):
 
     # ── Main Layout ──
     with ui.element("div").classes("w-full").style(
-        f"background: {COLORS['surface']}; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06)"
+        f"background: {COLORS['surface']}; border-radius: 0; overflow: hidden; border: 1px solid rgba(255,255,255,0.06)"
     ):
         # Title row with Add button
         with ui.row().classes("items-center justify-between w-full px-4 py-3").style(

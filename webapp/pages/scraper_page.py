@@ -188,13 +188,13 @@ def _render_result_card(app_state, client, item, media_type):
     ):
         if poster:
             ui.image(poster).classes("w-full").style(
-                "height: 270px; object-fit: cover; border-radius: 10px 10px 0 0")
+                "height: 270px; object-fit: cover; border-radius: 0")
         else:
             with ui.element("div").classes(
                 "w-full flex items-center justify-center"
             ).style(
                 f"height: 270px; background: {COLORS['surface_light']}; "
-                "border-radius: 10px 10px 0 0"
+                "border-radius: 0"
             ):
                 ic = "movie" if media_type == "movie" else "tv"
                 ui.icon(ic).classes("text-5xl").style(f"color: {COLORS['text_muted']}")
@@ -215,7 +215,7 @@ def _render_result_card(app_state, client, item, media_type):
             if imdb_id:
                 ui.label(imdb_id).classes("text-xs").style(
                     f"color: {COLORS['primary']}; background: {COLORS['primary']}18; "
-                    "border-radius: 4px; padding: 1px 6px; display: inline-block")
+                    "border-radius: 0; padding: 1px 6px; display: inline-block")
 
             async def _scrape(
                 _,
@@ -262,7 +262,7 @@ async def _open_scrape_dialog(app_state, client, *, imdb_id, title, media_type,
             with ui.row().classes("items-center gap-4"):
                 if poster_url:
                     ui.image(poster_url).style(
-                        "width: 40px; height: 58px; object-fit: cover; border-radius: 6px")
+                        "width: 40px; height: 58px; object-fit: cover; border-radius: 0")
                 with ui.column().classes("gap-0"):
                     ui.label(title).classes("text-lg font-bold").style(f"color: {COLORS['text']}")
                     with ui.row().classes("items-center gap-2"):

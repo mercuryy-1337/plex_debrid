@@ -225,7 +225,7 @@ def render_plex_auth(wizard, app_state, render_gen):
         if wizard.get("plex_token") and wizard.get("plex_user"):
             user_data = wizard["plex_user"]
             with ui.row().classes("items-center gap-3 p-4").style(
-                f"background: {COLORS['surface_light']}; border-radius: 8px"
+                f"background: {COLORS['surface_light']}; border-radius: 0"
             ):
                 if user_data and user_data.get("thumb"):
                     ui.image(user_data["thumb"]).classes("w-12 h-12 rounded-full")
@@ -303,7 +303,7 @@ def render_plex_auth(wizard, app_state, render_gen):
                 user_info_container.clear()
                 with user_info_container:
                     with ui.row().classes("items-center gap-3 p-4").style(
-                        f"background: {COLORS['surface_light']}; border-radius: 8px"
+                        f"background: {COLORS['surface_light']}; border-radius: 0"
                     ):
                         if user_data and user_data.get("thumb"):
                             ui.image(user_data["thumb"]).classes("w-12 h-12 rounded-full")

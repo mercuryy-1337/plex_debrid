@@ -63,19 +63,19 @@ async def render(app_state, client: Client):
                     failed = len([l for l in logs if l["status"] == "failed"])
                     
                     with ui.element("div").classes("px-4 py-2").style(
-                        f"background: {COLORS['surface_light']}; border-radius: 8px"
+                        f"background: {COLORS['surface_light']}; border-radius: 0"
                     ):
                         ui.label(f"Total: {len(logs)}").classes("text-sm font-semibold").style(
                             f"color: {COLORS['text']}")
                     
                     with ui.element("div").classes("px-4 py-2").style(
-                        f"background: {COLORS['surface_light']}; border-radius: 8px"
+                        f"background: {COLORS['surface_light']}; border-radius: 0"
                     ):
                         ui.label(f"Completed: {completed}").classes("text-sm font-semibold").style(
                             f"color: {COLORS['success']}")
                     
                     with ui.element("div").classes("px-4 py-2").style(
-                        f"background: {COLORS['surface_light']}; border-radius: 8px"
+                        f"background: {COLORS['surface_light']}; border-radius: 0"
                     ):
                         ui.label(f"Failed: {failed}").classes("text-sm font-semibold").style(
                             f"color: {COLORS['error']}")
@@ -143,7 +143,7 @@ async def render(app_state, client: Client):
                     "flat color=grey size=sm")
 
             live_log_container = ui.column().classes("p-4 gap-0 max-h-80 overflow-y-auto w-full").style(
-                f"background: {COLORS['background']}; border-radius: 8px; font-family: 'JetBrains Mono', monospace"
+                f"background: {COLORS['background']}; border-radius: 0; font-family: 'JetBrains Mono', monospace"
             )
 
             def refresh_live_log():

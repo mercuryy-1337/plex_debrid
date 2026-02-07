@@ -137,7 +137,7 @@ def create_spa_shell(app_state, initial_page, on_navigate):
             suggestions_panel = ui.column().classes("gap-0").style(
                 f"position: absolute; top: 100%; left: 0; right: 0; "
                 f"background: {COLORS['surface']}; border: 1px solid {COLORS['surface_light']}; "
-                "border-radius: 0 0 8px 8px; max-height: 360px; overflow-y: auto; z-index: 9999; "
+                "border-radius: 0; max-height: 360px; overflow-y: auto; z-index: 9999; "
                 "box-shadow: 0 8px 24px rgba(0,0,0,0.5); display: none;"
             )
 
@@ -183,7 +183,7 @@ def create_spa_shell(app_state, initial_page, on_navigate):
                         # Tiny poster thumbnail
                         if h_poster:
                             ui.image(h_poster).style(
-                                "width: 32px; height: 46px; object-fit: cover; border-radius: 4px; flex-shrink: 0"
+                                "width: 32px; height: 46px; object-fit: cover; border-radius: 0; flex-shrink: 0"
                             )
                         else:
                             ui.icon(type_icon).style(
