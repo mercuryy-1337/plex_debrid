@@ -6,7 +6,8 @@ Bridges the legacy download automation with the new web UI.
 import time
 import logging
 import itertools
-from threading import Thread
+from threading import Thread, Semaphore
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +15,17 @@ logger = logging.getLogger(__name__)
 class AutomationEngine:
     """Manages the background download automation loop."""
 
+    # Concurrency limits
+    MAX_CONCURRENT = 5          # total simultaneous downloads
+    MAX_MOVIES = 4              # max concurrent movie downloads
+    MAX_SERIES = 1              # max concurrent series downloads
+
     def __init__(self, app_state):
         self.app_state = app_state
         self._thread = None
         self._stop = False
+        self._movie_sem = Semaphore(self.MAX_MOVIES)
+        self._series_sem = Semaphore(self.MAX_SERIES)
 
     @property
     def running(self):
@@ -90,35 +98,8 @@ class AutomationEngine:
                 self.app_state.add_log(f"Checking new content ({len(watchlists)} items)...")
             else:
                 self.app_state.add_log(f"Library empty — checking new content ({len(watchlists)} items)...")
-            t0 = time.time()
-            for element in self._unique(watchlists):
-                if self._stop:
-                    break
-                if hasattr(element, 'download'):
-                    self._log_content_item(element)
-                    element.download(library=library)
-                    t1 = time.time()
-                    if t1 - t0 >= 5:
-                        if plex_watchlist.update() or overseerr_requests.update() or trakt_watchlist.update():
-                            lib_services = content.classes.library()
-                            library = lib_services[0]() if lib_services else []
-                            new_wl = plex_watchlist + trakt_watchlist + overseerr_requests
-                            try:
-                                new_wl.data.sort(key=lambda s: s.watchlistedAt, reverse=True)
-                            except Exception:
-                                pass
-                            new_wl = self._unique(new_wl)
-                            for el in new_wl[:]:
-                                if el in watchlists:
-                                    new_wl.remove(el)
-                            self.app_state.add_log("Found new content while processing...")
-                            for el in new_wl:
-                                if self._stop:
-                                    break
-                                if hasattr(el, 'download'):
-                                    self._log_content_item(el)
-                                    el.download(library=library)
-                        t0 = time.time()
+
+            self._process_elements(self._unique(watchlists), library)
             self.app_state.add_log("Initial check complete")
 
             # Main polling loop
@@ -134,6 +115,8 @@ class AutomationEngine:
                         pass
 
                     self.app_state.add_log("Checking updated content...")
+                    # Filter to newly added items only
+                    new_elements = []
                     for element in self._unique(watchlists):
                         if self._stop:
                             break
@@ -149,8 +132,8 @@ class AutomationEngine:
                                             newly_added = False
                                             break
                             if newly_added:
-                                self._log_content_item(element)
-                                element.download(library=library)
+                                new_elements.append(element)
+                    self._process_elements(new_elements, library)
                     self.app_state.add_log("Check complete")
 
                 elif timeout_counter >= regular_check:
@@ -168,12 +151,7 @@ class AutomationEngine:
                     library = lib_services[0]() if lib_services else []
                     timeout_counter = 0
 
-                    for element in self._unique(watchlists):
-                        if self._stop:
-                            break
-                        if hasattr(element, 'download'):
-                            self._log_content_item(element)
-                            element.download(library=library)
+                    self._process_elements(self._unique(watchlists), library)
                     self.app_state.add_log("Regular check complete")
                 else:
                     timeout_counter += timeout
@@ -313,6 +291,12 @@ class AutomationEngine:
         else:
             self.app_state.decypharr_client = None
 
+        # Watchlist auto-remove setting
+        auto_remove = db.get_setting("Plex auto remove", "none")
+        content.services.plex.watchlist.autoremove = auto_remove
+        if hasattr(content.services, 'trakt') and hasattr(content.services.trakt, 'watchlist'):
+            content.services.trakt.watchlist.autoremove = auto_remove
+
         self.app_state.add_log("Settings loaded into modules")
 
     def _setup_decypharr_download(self):
@@ -392,13 +376,22 @@ class AutomationEngine:
                         tmdb_id = eid.replace('tmdb://', '')
 
             # ── Create activity item ─────────────────────────────
+            clean_title = title_str.replace('.', ' ').strip()
             activity_id = app_state.add_activity(
-                title=title_str.replace('.', ' ').strip(),
+                title=clean_title,
                 release_title=release.title,
                 info_hash=info_hash or "",
                 category=category,
                 imdb_id=imdb_id or "",
             )
+            size_gb = release.size / 1024 if release.size > 100 else release.size
+            log_msg = (
+                f"Sending to Decypharr: {clean_title} | "
+                f"Release: {release.title[:90]} | "
+                f"{size_gb:.1f}GB | {ver_name}/{category}"
+            )
+            app_state.add_log(f"⬇ {log_msg}")
+            logger.info(log_msg)
 
             # ── Send to Decypharr ────────────────────────────────
             try:
@@ -419,9 +412,6 @@ class AutomationEngine:
                     app_state.remove_activity(activity_id)
                     return False
 
-                app_state.add_log(
-                    f"✓ Sent to Decypharr: {release.title[:80]} [{ver_name}/{category}]"
-                )
                 app_state.update_activity(
                     activity_id, status="sent_to_decypharr")
 
@@ -466,11 +456,9 @@ class AutomationEngine:
                     activity_id = None
 
                 # ── Log download + update content library ─────────
-                size_gb = (release.size / 1024 if release.size > 100
-                           else release.size)
                 try:
                     app_state.db.add_download_log(
-                        title=title_str.replace('.', ' ').strip(),
+                        title=clean_title,
                         release_title=release.title,
                         media_type=media_type,
                         imdb_id=imdb_id,
@@ -496,7 +484,7 @@ class AutomationEngine:
                     app_state.db.upsert_content_item(
                         imdb_id=imdb_id,
                         tmdb_id=tmdb_id,
-                        title=title_str.replace('.', ' ').strip(),
+                        title=clean_title,
                         media_type=media_type,
                         year=getattr(element, 'year', None),
                         status="collected",
@@ -616,6 +604,40 @@ class AutomationEngine:
             )
         except Exception as e:
             logger.debug(f"Failed to log content item: {e}")
+
+    def _process_elements(self, elements, library):
+        """Process downloadable elements concurrently (max 4 movies, 1 series)."""
+        def _do_download(element):
+            if self._stop:
+                return
+            media_type = getattr(element, 'type', 'movie')
+            is_series = media_type in ('show', 'season')
+            sem = self._series_sem if is_series else self._movie_sem
+            sem.acquire()
+            try:
+                if self._stop:
+                    return
+                self._log_content_item(element)
+                element.download(library=library)
+            finally:
+                sem.release()
+
+        downloadable = [e for e in elements if hasattr(e, 'download')]
+        if not downloadable:
+            return
+
+        with ThreadPoolExecutor(max_workers=self.MAX_CONCURRENT) as pool:
+            futures = []
+            for element in downloadable:
+                if self._stop:
+                    break
+                futures.append(pool.submit(_do_download, element))
+            # Wait for all to finish (or stop flag)
+            for future in as_completed(futures):
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.debug(f"Concurrent download error: {e}")
 
     @staticmethod
     def _unique(lst):

@@ -23,7 +23,7 @@ def _enrich_content_items(db, items):
         imdb_id = item["imdb_id"]
         media_type = item.get("media_type", "movie")
         try:
-            if media_type in ("show", "anime_show"):
+            if media_type in ("show", "anime_show", "season"):
                 url = f"https://v3-cinemeta.strem.io/meta/series/{imdb_id}.json"
             else:
                 url = f"https://cinemeta-live.strem.io/meta/movie/{imdb_id}.json"
@@ -176,6 +176,8 @@ async def render(app_state, client: Client):
                     "flat color=amber")
 
             content_items = app_state.db.get_all_content()
+            # Seasons are tracked via their parent show — hide them here
+            content_items = [i for i in content_items if i.get("media_type") != "season"]
 
             # Enrich items missing poster/year in the background (first load)
             needs_enrich = [i for i in content_items if not i.get("poster_url") and i.get("imdb_id")]

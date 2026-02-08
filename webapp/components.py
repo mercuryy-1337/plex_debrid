@@ -284,6 +284,9 @@ def create_spa_shell(app_state, initial_page, on_navigate, client=None):
     ):
         nav_container = ui.column().classes("w-full gap-0 pt-2")
 
+        # Dict to hold the activity badge reference for live updates
+        _activity_badge_ref = {"label": None}
+
         def _build_nav():
             nav_container.clear()
             with nav_container:
@@ -313,12 +316,34 @@ def create_spa_shell(app_state, initial_page, on_navigate, client=None):
                             f"color: {COLORS['primary'] if is_active else COLORS['text']};"
                             f"font-size: 0.95rem"
                         ).classes("font-medium")
+                        # Activity badge — live count of items in queue
+                        if item["page"] == "activity":
+                            count = len(app_state.get_activities())
+                            badge = ui.label(str(count)).style(
+                                f"background: {COLORS['primary']}; color: #000;"
+                                " font-size: 0.65rem; font-weight: 700;"
+                                " min-width: 20px; height: 20px; border-radius: 10px;"
+                                " display: flex; align-items: center; justify-content: center;"
+                                " padding: 0 5px; margin-left: auto;"
+                            )
+                            badge.set_visibility(count > 0)
+                            _activity_badge_ref["label"] = badge
                     if i < len(nav_items) - 1:
                         ui.element("div").style(
                             "height: 1px; background: rgba(255,255,255,0.06); margin: 0"
                         )
 
         _build_nav()
+
+        # Timer to refresh activity badge count every 2 seconds
+        def _refresh_activity_badge():
+            badge = _activity_badge_ref.get("label")
+            if badge:
+                count = len(app_state.get_activities())
+                badge.text = str(count)
+                badge.set_visibility(count > 0)
+
+        ui.timer(2.0, _refresh_activity_badge)
 
         # Spacer
         ui.element("div").classes("flex-1")
@@ -370,13 +395,13 @@ def content_card(item):
     is_anime = item.get("is_anime", False)
     badge_class = "badge-movie"
     type_label = "Movie"
-    if media_type in ("show", "anime_show"):
+    if media_type in ("show", "anime_show", "season"):
         if is_anime:
             badge_class = "badge-anime"
             type_label = "Anime"
         else:
             badge_class = "badge-show"
-            type_label = "Show"
+            type_label = "Show" if media_type in ("show", "anime_show") else "Season"
 
     status = item.get("status", "unknown")
     status_colors = {
