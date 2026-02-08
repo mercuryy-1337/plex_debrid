@@ -377,6 +377,8 @@ class DatabaseManager:
                 "triggers": json.loads(v.triggers) if v.triggers else [],
                 "language": v.language,
                 "rules": json.loads(v.rules) if v.rules else [],
+                "download_folder": v.download_folder or "",
+                "media_folder": v.media_folder or "",
                 "sort_order": v.sort_order,
             } for v in versions]
 

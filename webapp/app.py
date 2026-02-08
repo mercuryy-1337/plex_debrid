@@ -78,6 +78,24 @@ def create_app(config_dir="."):
     async def onboarding_route(client: Client):
         await onboarding.render(app_state, client)
 
+    # ── API endpoints (must be registered BEFORE the SPA catch-all) ─
+    @app.get("/api/plex/callback")
+    async def plex_callback():
+        from starlette.responses import HTMLResponse
+        return HTMLResponse(
+            "<html><body style='background:#0F1117;color:#E5E7EB;font-family:sans-serif;"
+            "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
+            "<div style='text-align:center'>"
+            "<p style='font-size:1.4em;color:#E5A00D'>&#10003; Plex Authentication Successful</p>"
+            "<p>You can close this window.</p>"
+            "<script>setTimeout(function(){window.close();},1500);</script>"
+            "</div></body></html>"
+        )
+
+    @app.get("/api/health")
+    async def health():
+        return {"status": "healthy", "onboarding_required": app_state.needs_onboarding}
+
     # ── SPA shell for all other pages ───────────────────────────────
     @ui.page("/")
     @ui.page("/{_path:path}")
@@ -125,24 +143,6 @@ def create_app(config_dir="."):
                 await pages[page].render(app_state, client, search_query=raw_q)
             else:
                 await pages[page].render(app_state, client)
-
-    # ── API endpoints ───────────────────────────────────────────────
-    @app.get("/api/plex/callback")
-    async def plex_callback():
-        from starlette.responses import HTMLResponse
-        return HTMLResponse(
-            "<html><body style='background:#0F1117;color:#E5E7EB;font-family:sans-serif;"
-            "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
-            "<div style='text-align:center'>"
-            "<p style='font-size:1.4em;color:#E5A00D'>&#10003; Plex Authentication Successful</p>"
-            "<p>You can close this window.</p>"
-            "<script>setTimeout(function(){window.close();},1500);</script>"
-            "</div></body></html>"
-        )
-
-    @app.get("/api/health")
-    async def health():
-        return {"status": "healthy", "onboarding_required": app_state.needs_onboarding}
 
     return app
 

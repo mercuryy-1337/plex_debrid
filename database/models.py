@@ -211,6 +211,8 @@ class ReleaseVersion(Base):
     triggers = Column(Text, nullable=True)  # JSON
     language = Column(String(10), default="en")
     rules = Column(Text, nullable=True)  # JSON
+    download_folder = Column(String(500), nullable=True)  # Decypharr symlink output
+    media_folder = Column(String(500), nullable=True)     # Final media destination
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 

@@ -41,8 +41,11 @@ pd_reloaded replaces the legacy CLI with a full NiceGUI web frontend, SQLite dat
 - Multi-user support with per-user library selection and server switching
 
 ### Version Profiles
-- GUI-based version editor with **rules**, **triggers**, **language**, **category**, and **API key** fields
+- GUI-based version editor with **rules**, **triggers**, **language**, **category**, and **folder path** fields
 - Each version maps to a Decypharr category for isolated download handling
+- **Download Folder** — where Decypharr places symlinks (e.g. `/mnt/symlinks/version1/`)
+- **Media Folder** — where the app moves completed content (e.g. `/mnt/media/shows/`)
+- Flow: Decypharr downloads → symlinks in `download_folder/show.name/` → on completion, app moves to `media_folder/show.name/`
 
 ### Other Improvements
 - Docker-ready with `docker-compose.yml` (port 8008, config volume)
@@ -142,7 +145,12 @@ Plex Watchlist / Trakt / Overseerr
         ├── Debrid: Real-Debrid / AllDebrid / Premiumize / ...
         │
         ▼
-   Symlinks → Plex Libraries
+   Download Folder (symlinks)  ──[on completion]──▶  Media Folder
+        │                                                │
+        └── /version1/show.name/file.mkv                └── /shows/show.name/file.mkv
+                                                              │
+                                                              ▼
+                                                         Plex Libraries
 ```
 
 ---
@@ -156,9 +164,11 @@ Plex Watchlist / Trakt / Overseerr
 - [x] Plex browser auth + multi-user
 - [x] Decypharr integration (add, poll, cleanup)
 - [x] Manual scrape & download with version selection
+- [x] Per-version download & media folder paths (symlink management groundwork)
 - [x] Automated content monitoring & download
 - [x] SQLite database with migration from legacy settings
 - [ ] Scheduled library refresh after download
+- [ ] Automatic symlink relocation (download folder → media folder on completion)
 - [ ] Discord notifications
 - [ ] Jellyfin library support
 - [ ] Import/export settings

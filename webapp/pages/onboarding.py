@@ -69,6 +69,8 @@ async def render(app_state, client: Client):
         "overseerr_key": "",
         "decypharr_url": "",
         "decypharr_username": "",
+        "download_folder": "",
+        "media_folder": "",
     }
     if saved:
         wizard.update(saved)
@@ -197,9 +199,6 @@ def render_welcome(wizard):
             with ui.row().classes("items-center gap-3"):
                 ui.icon("check_circle").style(f"color: {COLORS['success']}")
                 ui.label("Automatic server and library discovery").style(f"color: {COLORS['text']}")
-            with ui.row().classes("items-center gap-3"):
-                ui.icon("check_circle").style(f"color: {COLORS['success']}")
-                ui.label("Debrid service integration (RD, PM, AD, DL, PUT)").style(f"color: {COLORS['text']}")
             with ui.row().classes("items-center gap-3"):
                 ui.icon("check_circle").style(f"color: {COLORS['success']}")
                 ui.label("Multiple scraping sources with version rules").style(f"color: {COLORS['text']}")
@@ -520,6 +519,28 @@ def render_debrid(wizard, app_state):
         ui.button("Test Connection", on_click=test_connection, icon="wifi_tethering").props(
             "color=blue push").classes("mt-2")
 
+        ui.separator().classes("my-4")
+
+        ui.label("Folder Paths").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
+        ui.label(
+            "Download folder: Decypharr will place symlinks here. (this will be for your first Release version)"
+            "Media folder: the app will move completed content here. (this will be for your first Release version)"
+        ).classes("text-xs mt-1").style(f"color: {COLORS['text_muted']}")
+
+        ui.input(
+            "Download Folder",
+            value=wizard.get("download_folder", ""),
+            placeholder="/mnt/symlinks/default",
+            on_change=lambda e: wizard.update({"download_folder": e.value}),
+        ).classes("w-full mt-2").props("outlined dark color=amber")
+
+        ui.input(
+            "Media Folder",
+            value=wizard.get("media_folder", ""),
+            placeholder="/mnt/media/shows",
+            on_change=lambda e: wizard.update({"media_folder": e.value}),
+        ).classes("w-full mt-2").props("outlined dark color=amber")
+
         with ui.row().classes("mt-6 justify-between w-full"):
             ui.button("Back", on_click=wizard["prev_step"]).props("flat color=grey")
             ui.button("Next", on_click=wizard["next_step"]).props("color=amber push").classes("px-6")
@@ -713,6 +734,8 @@ async def save_and_finish(wizard, app_state):
         rules=default_rules,
         sort_order=0,
         category="default",
+        download_folder=wizard.get("download_folder", "").strip(),
+        media_folder=wizard.get("media_folder", "").strip(),
     )
 
     # Mark setup complete

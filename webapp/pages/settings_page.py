@@ -765,6 +765,8 @@ async def _render_version_settings(app_state):
                                 "name": f"{src['name']} (copy)",
                                 "language": src.get("language", "en"),
                                 "category": f"{src.get('category', 'default')}_copy",
+                                "download_folder": src.get("download_folder", ""),
+                                "media_folder": src.get("media_folder", ""),
                                 "triggers": [list(t) for t in src.get("triggers", [])],
                                 "rules": [list(r) for r in src.get("rules", [])],
                             }
@@ -874,6 +876,12 @@ async def _render_version_settings(app_state):
                 rule_count = len(ver.get("rules", []))
                 ui.label(f"{trigger_count} triggers").classes("text-xs").style(f"color: {COLORS['text_muted']}")
                 ui.label(f"{rule_count} rules").classes("text-xs").style(f"color: {COLORS['text_muted']}")
+                dl_f = ver.get("download_folder", "")
+                media_f = ver.get("media_folder", "")
+                if dl_f:
+                    ui.label(f"📥 {dl_f}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
+                if media_f:
+                    ui.label(f"📁 {media_f}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
     def _open_version_editor(ver_data, is_new=False):
         """Open a dialog to edit a version's triggers, rules, language, name, and category."""
@@ -881,6 +889,8 @@ async def _render_version_settings(app_state):
             "name": ver_data["name"],
             "language": ver_data.get("language", "en"),
             "category": ver_data.get("category", ""),
+            "download_folder": ver_data.get("download_folder", ""),
+            "media_folder": ver_data.get("media_folder", ""),
             "triggers": [list(t) for t in ver_data.get("triggers", [])],
             "rules": [list(r) for r in ver_data.get("rules", [])],
         }
@@ -909,6 +919,25 @@ async def _render_version_settings(app_state):
                             placeholder="e.g. movies, shows, anime"
                         ).classes("flex-1").props("outlined dense dark color=amber")
                         ui.label("*").classes("text-sm mt-2").style(f"color: {COLORS['error']}")
+
+                    # Download Folder + Media Folder
+                    with ui.card().classes("w-full p-3").style(f"background: {COLORS['surface_light']}"):
+                        ui.label("Folder Paths").classes("text-sm font-bold mb-2").style(f"color: {COLORS['primary']}")
+                        ui.label(
+                            "Download folder: where Decypharr places symlinks. "
+                            "Media folder: where the app moves completed content."
+                        ).classes("text-xs mb-2").style(f"color: {COLORS['text_muted']}")
+                        with ui.row().classes("w-full gap-3"):
+                            dl_folder_input = ui.input(
+                                "Download Folder",
+                                value=edit_state.get("download_folder", ""),
+                                placeholder="/mnt/symlinks/version1"
+                            ).classes("flex-1").props("outlined dense dark color=amber")
+                            media_folder_input = ui.input(
+                                "Media Folder",
+                                value=edit_state.get("media_folder", ""),
+                                placeholder="/mnt/media/shows"
+                            ).classes("flex-1").props("outlined dense dark color=amber")
 
                     # ── Triggers Section ──
                     with ui.card().classes("w-full p-3").style(f"background: {COLORS['surface_light']}"):
@@ -1072,6 +1101,8 @@ async def _render_version_settings(app_state):
                         "name": name_input.value.strip(),
                         "language": lang_input.value.strip() or "en",
                         "category": category_input.value.strip(),
+                        "download_folder": dl_folder_input.value.strip(),
+                        "media_folder": media_folder_input.value.strip(),
                         "triggers": edit_state["triggers"],
                         "rules": edit_state["rules"],
                     }
