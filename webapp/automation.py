@@ -49,6 +49,7 @@ class AutomationEngine:
         """Main automation loop - mirrors the legacy threaded() function."""
         try:
             self._load_settings_into_modules()
+            self._setup_decypharr_download()
             self.app_state.add_log("Loading content services...")
 
             import content
@@ -313,6 +314,214 @@ class AutomationEngine:
             self.app_state.decypharr_client = None
 
         self.app_state.add_log("Settings loaded into modules")
+
+    def _setup_decypharr_download(self):
+        """Replace legacy debrid.download with Decypharr-based download.
+
+        The legacy flow scrapes and sorts releases perfectly, but the final
+        ``debrid.download()`` call fails because no traditional debrid service
+        (RealDebrid, AllDebrid, …) is configured — Decypharr is the download
+        backend.  We monkey-patch ``debrid.download`` so the entire legacy
+        scrape → sort → download pipeline works end-to-end via Decypharr.
+        """
+        import debrid
+
+        decypharr_client = self.app_state.decypharr_client
+        if not decypharr_client:
+            self.app_state.add_log(
+                "Warning: no Decypharr client — downloads will use legacy debrid"
+            )
+            return
+
+        # Build version-name → category map from DB
+        db = self.app_state.db
+        versions_data = db.get_release_versions(enabled_only=True) if db else []
+        version_categories = {}
+        for v in versions_data:
+            version_categories[v["name"]] = v.get("category", "default")
+
+        app_state = self.app_state
+        client = decypharr_client
+
+        def _decypharr_download(element, stream=False, query='', force=False):
+            """Route the download through Decypharr."""
+            if not element.Releases:
+                return False
+
+            release = element.Releases[0]
+
+            # ── Extract magnet / info-hash ────────────────────────
+            download_attr = getattr(release, "download", None)
+            if isinstance(download_attr, list):
+                magnet = download_attr[0] if download_attr else None
+            else:
+                magnet = download_attr
+            info_hash = getattr(release, "hash", None) or ""
+
+            if not info_hash and magnet and isinstance(magnet, str) and magnet.startswith("magnet:"):
+                import re as _re
+                m = _re.search(r'btih:([a-fA-F0-9]{40})', magnet)
+                if m:
+                    info_hash = m.group(1).lower()
+                else:
+                    m = _re.search(r'btih:([a-fA-F0-9]{32})', magnet)
+                    if m:
+                        info_hash = m.group(1).lower()
+
+            if not magnet and not info_hash:
+                return False
+
+            # ── Determine category from the current version ───────
+            category = "default"
+            ver_name = "unknown"
+            if hasattr(element, 'version') and hasattr(element.version, 'name'):
+                ver_name = element.version.name
+                category = version_categories.get(ver_name, "default")
+
+            # ── Extract identifiers ──────────────────────────────
+            title_str = (element.query() if hasattr(element, 'query')
+                         and callable(element.query) else release.title)
+            imdb_id = None
+            tmdb_id = None
+            media_type = getattr(element, 'type', 'movie')
+            if hasattr(element, 'EID'):
+                for eid in element.EID:
+                    if 'imdb://' in eid:
+                        imdb_id = eid.replace('imdb://', '')
+                    elif 'tmdb://' in eid:
+                        tmdb_id = eid.replace('tmdb://', '')
+
+            # ── Create activity item ─────────────────────────────
+            activity_id = app_state.add_activity(
+                title=title_str.replace('.', ' ').strip(),
+                release_title=release.title,
+                info_hash=info_hash or "",
+                category=category,
+                imdb_id=imdb_id or "",
+            )
+
+            # ── Send to Decypharr ────────────────────────────────
+            try:
+                if magnet and isinstance(magnet, str) and magnet.startswith("magnet:"):
+                    result = client.download_magnet(magnet, category=category)
+                elif info_hash:
+                    result = client.download_hash(info_hash, category=category)
+                elif magnet:
+                    result = client.add_torrent_url(magnet, category=category)
+                else:
+                    app_state.remove_activity(activity_id)
+                    return False
+
+                if not result:
+                    app_state.add_log(
+                        f"✗ Decypharr rejected: {release.title[:80]} [{ver_name}/{category}]"
+                    )
+                    app_state.remove_activity(activity_id)
+                    return False
+
+                app_state.add_log(
+                    f"✓ Sent to Decypharr: {release.title[:80]} [{ver_name}/{category}]"
+                )
+                app_state.update_activity(
+                    activity_id, status="sent_to_decypharr")
+
+                # ── Poll for completion (up to 5 min) ────────────
+                if info_hash:
+                    try:
+                        from webapp.decypharr import TorrentState
+
+                        def _on_progress(state, progress):
+                            if TorrentState.is_downloading(state):
+                                app_state.update_activity(
+                                    activity_id, status="downloading",
+                                    progress=progress,
+                                )
+                            elif TorrentState.is_completed(state):
+                                app_state.update_activity(
+                                    activity_id, status="downloaded",
+                                    progress=1.0,
+                                )
+
+                        poll = client.wait_for_completion(
+                            info_hash,
+                            timeout=300,
+                            poll_interval=5,
+                            remove_on_complete=True,
+                            progress_callback=_on_progress,
+                        )
+                        if poll["success"]:
+                            app_state.update_activity(
+                                activity_id, status="completed", progress=1.0)
+                            time.sleep(5)
+                            app_state.remove_activity(activity_id)
+                            activity_id = None
+                    except Exception as poll_err:
+                        logger.debug("Torrent polling error (non-fatal): %s",
+                                     poll_err)
+                else:
+                    app_state.update_activity(
+                        activity_id, status="completed", progress=1.0)
+                    time.sleep(5)
+                    app_state.remove_activity(activity_id)
+                    activity_id = None
+
+                # ── Log download + update content library ─────────
+                size_gb = (release.size / 1024 if release.size > 100
+                           else release.size)
+                try:
+                    app_state.db.add_download_log(
+                        title=title_str.replace('.', ' ').strip(),
+                        release_title=release.title,
+                        media_type=media_type,
+                        imdb_id=imdb_id,
+                        tmdb_id=tmdb_id,
+                        debrid_service=f"decypharr/{ver_name} ({category})",
+                        scraper_source=getattr(release, 'source', 'unknown'),
+                        resolution=str(getattr(release, 'resolution', '')),
+                        size_gb=size_gb,
+                        status="completed",
+                    )
+                except Exception:
+                    logger.debug("Failed to log download")
+
+                try:
+                    is_anime = (hasattr(element, 'isanime')
+                                and element.isanime())
+                    if is_anime:
+                        if media_type == "movie":
+                            media_type = "anime_movie"
+                        elif media_type == "show":
+                            media_type = "anime_show"
+
+                    app_state.db.upsert_content_item(
+                        imdb_id=imdb_id,
+                        tmdb_id=tmdb_id,
+                        title=title_str.replace('.', ' ').strip(),
+                        media_type=media_type,
+                        year=getattr(element, 'year', None),
+                        status="collected",
+                        source="automation",
+                    )
+                except Exception:
+                    logger.debug("Failed to update content item")
+
+                return True
+
+            except Exception as e:
+                logger.exception("Decypharr download error for %s",
+                                 release.title[:60])
+                app_state.add_log(f"✗ Decypharr error: {e}")
+                return False
+            finally:
+                if activity_id:
+                    try:
+                        app_state.remove_activity(activity_id)
+                    except Exception:
+                        pass
+
+        # Patch the global debrid.download function
+        debrid.download = _decypharr_download
+        self.app_state.add_log("Download routing: Decypharr")
 
     def _log_all_watchlist_items(self, watchlists):
         """Batch-insert all watchlist items to content library before processing."""
