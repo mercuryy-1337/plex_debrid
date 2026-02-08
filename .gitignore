@@ -402,7 +402,7 @@ FodyWeavers.xsd
 *.db-journal
 *.db-wal
 *.db-shm
-settings.json
+settings*.json
 settings.json.old
 old_settings.json
 config/

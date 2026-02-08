@@ -178,69 +178,90 @@ def _render_result_card(app_state, client, item, media_type):
     name = item.get("name", "Unknown")
     year = item.get("releaseInfo", "")
     poster = item.get("poster", "")
-    rating = item.get("imdbRating", "")
     imdb_id = item.get("id", "")
+    rating = item.get("imdbRating", "")
     type_label = "Movie" if media_type == "movie" else "Series"
     badge_class = "badge-movie" if media_type == "movie" else "badge-show"
 
-    with ui.card().classes("content-card cursor-pointer").style(
-        f"width: 190px; background: {COLORS['surface']}"
-    ):
+    ic = "movie" if media_type == "movie" else "tv"
+    # Placeholder sits behind the <img>; on error we just hide the img.
+    placeholder_bg = (
+        f'<div style="position:absolute;inset:0;display:flex;align-items:center;'
+        f'justify-content:center;background:{COLORS["surface_light"]};">'
+        f'<span class="material-icons" style="font-size:3rem;color:{COLORS["text_muted"]}">{ic}</span></div>'
+    )
+
+    with ui.card().style(
+        f"width: 185px; height: 395px; overflow: hidden; padding: 0; margin: 0;"
+        f" border-radius: 8px; background: {COLORS['surface']};"
+        " display: flex; flex-direction: column; gap: 0;"
+    ).classes("content-card"):
+        # Poster — fixed height container with placeholder behind image
         if poster:
-            ui.image(poster).classes("w-full").style(
-                "height: 270px; object-fit: cover; border-radius: 0")
+            ui.html(
+                f'<div style="position:relative;width:185px;height:260px;overflow:hidden;">'
+                f'{placeholder_bg}'
+                f'<img src="{poster}" '
+                f'onerror="this.style.display=\'none\'" '
+                f'style="position:relative;width:185px;height:260px;object-fit:cover;display:block;" />'
+                f'</div>'
+            ).style("width: 185px; height: 260px; flex-shrink: 0; line-height: 0; padding: 0; overflow: hidden;")
         else:
-            with ui.element("div").classes(
-                "w-full flex items-center justify-center"
-            ).style(
-                f"height: 270px; background: {COLORS['surface_light']}; "
-                "border-radius: 0"
-            ):
-                ic = "movie" if media_type == "movie" else "tv"
-                ui.icon(ic).classes("text-5xl").style(f"color: {COLORS['text_muted']}")
+            ui.html(
+                f'<div style="position:relative;width:185px;height:260px;">'
+                f'{placeholder_bg}</div>'
+            ).style("width: 185px; height: 260px; flex-shrink: 0; line-height: 0; padding: 0;")
 
-        with ui.column().classes("p-3 gap-1"):
-            with ui.row().classes("items-center gap-2"):
-                ui.html(f'<span class="{badge_class}">{type_label}</span>')
-                if year:
-                    ui.label(year).classes("text-xs").style(f"color: {COLORS['text_muted']}")
-
-            ui.label(name).classes("text-sm font-semibold truncate").style(
-                f"color: {COLORS['text']}; max-width: 170px"
-            ).props("lines=2")
-
-            if rating:
-                ui.html(f'<span style="color:#F59E0B;font-size:0.75rem">★ {rating}</span>')
-
-            if imdb_id:
-                ui.label(imdb_id).classes("text-xs").style(
-                    f"color: {COLORS['primary']}; background: {COLORS['primary']}18; "
-                    "border-radius: 0; padding: 1px 6px; display: inline-block")
-
-            scrape_btn_row = ui.row().classes("w-full items-center justify-center gap-2 mt-1")
-            with scrape_btn_row:
-                _card_spinner = ui.spinner("dots", size="sm", color="amber")
-                _card_spinner.visible = False
-
-                async def _scrape(
-                    _,
-                    _imdb=imdb_id, _name=name, _type=media_type,
-                    _poster=poster, _year=year, _rating=rating,
-                    _sp=_card_spinner,
-                ):
-                    _sp.visible = True
-                    try:
-                        await _open_scrape_dialog(
-                            app_state, client,
-                            imdb_id=_imdb, title=_name, media_type=_type,
-                            poster_url=_poster, year=_year, rating=_rating,
+        # Info + button section
+        with ui.element("div").style(
+            "padding: 8px 10px; display: flex; flex-direction: column;"
+            " justify-content: space-between; flex: 1; gap: 0;"
+        ):
+            # Top: metadata
+            with ui.element("div").style("display: flex; flex-direction: column; gap: 3px;"):
+                with ui.element("div").style("display: flex; align-items: center; gap: 6px;"):
+                    ui.html(f'<span class="{badge_class}">{type_label}</span>')
+                    if year:
+                        ui.html(
+                            f'<span style="color:{COLORS["text_muted"]};font-size:0.75rem;">{year}</span>'
                         )
-                    finally:
-                        _sp.visible = False
 
-                ui.button("Scrape", icon="search", on_click=_scrape).props(
-                    "color=amber push dense size=sm"
-                ).classes("flex-1 text-xs")
+                ui.html(
+                    f'<div style="color:{COLORS["text"]};font-size:0.85rem;font-weight:600;'
+                    f'line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+                    f'max-width:165px;">{name}</div>'
+                )
+
+                if imdb_id:
+                    ui.html(
+                        f'<span style="color:{COLORS["primary"]};font-size:0.7rem;'
+                        f'background:{COLORS["primary"]}18;border-radius:3px;'
+                        f'padding:1px 6px;">{imdb_id}</span>'
+                    )
+
+            # Bottom: scrape button — raw div, fixed width
+            _card_spinner = ui.spinner("dots", size="sm", color="amber")
+            _card_spinner.visible = False
+
+            async def _scrape(
+                _,
+                _imdb=imdb_id, _name=name, _type=media_type,
+                _poster=poster, _year=year, _rating=rating,
+                _sp=_card_spinner,
+            ):
+                _sp.visible = True
+                try:
+                    await _open_scrape_dialog(
+                        app_state, client,
+                        imdb_id=_imdb, title=_name, media_type=_type,
+                        poster_url=_poster, year=_year, rating=_rating,
+                    )
+                finally:
+                    _sp.visible = False
+
+            ui.button("Scrape", icon="search", on_click=_scrape).props(
+                "color=amber push dense size=sm no-caps"
+            ).style("width: 161px; font-size: 0.75rem;")
 
 
 # ═══════════════════════════════════════════════════════════════════

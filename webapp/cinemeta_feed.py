@@ -128,32 +128,38 @@ def search(query: str, limit: int = 5) -> list:
 
 
 def search_grouped(query: str, limit_per_type: int = 20) -> dict:
-    """Search and return results grouped by type.
+    """Search Cinemeta catalogs directly via their search API.
 
-    Returns ``{"movie": [...], "series": [...]}``.
+    Queries both the movie and series catalogs in parallel and returns
+    ``{"movie": [...], "series": [...]}``.
     """
     if not query or not query.strip():
         return {"movie": [], "series": []}
 
-    with _lock:
-        _ensure_fresh()
-        idx = _search_index
+    from urllib.parse import quote
+    from concurrent.futures import ThreadPoolExecutor
 
-    if idx is None:
-        return {"movie": [], "series": []}
+    q = quote(query.strip())
+    movie_url = f"https://v3-cinemeta.strem.io/catalog/movie/top/search={q}.json"
+    series_url = f"https://v3-cinemeta.strem.io/catalog/series/top/search={q}.json"
 
-    # Fetch more results than needed so we can split by type
-    results = idx.search(query.strip(), max_results=(limit_per_type * 2) + 10)
+    def _fetch(url):
+        try:
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("metas", [])
+        except Exception as e:
+            logger.debug("Cinemeta search failed for %s: %s", url, e)
+            return []
 
-    movies = []
-    series = []
-    for item, _score in results:
-        t = (item.get("type") or "").lower()
-        if t == "series":
-            if len(series) < limit_per_type:
-                series.append(item)
-        else:
-            if len(movies) < limit_per_type:
-                movies.append(item)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        movie_future = pool.submit(_fetch, movie_url)
+        series_future = pool.submit(_fetch, series_url)
+        movies = movie_future.result()
+        series = series_future.result()
 
-    return {"movie": movies, "series": series}
+    return {
+        "movie": movies[:limit_per_type],
+        "series": series[:limit_per_type],
+    }
