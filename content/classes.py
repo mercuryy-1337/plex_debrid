@@ -565,22 +565,22 @@ class media:
                     title = releases.rename(self.parentTitle)
                 elif self.type == 'episode':
                     title = releases.rename(self.grandparentTitle)
-            title = title.replace('[', '\[').replace(']', '\]')
+            title = title.replace('[', r'\[').replace(']', r'\]')
             if self.type == 'movie':
                 if regex.search(str(self.year), releases.rename(self.title.replace(str(self.year), '') + ' ' + str(self.year))):
                     title = title.replace('.' + str(self.year), '')
                     if year != "":
-                        return '[^A-Za-z0-9]*(' + title + ':?.)\(?\[?(' + str(year) + ')'
-                    return '[^A-Za-z0-9]*(' + title + ':?.)\(?\[?(' + str(self.year) + '|' + str(self.year - 1) + '|' + str(self.year + 1) + ')'
+                        return r'[^A-Za-z0-9]*(' + title + r':?.)\(?\[?(' + str(year) + ')'
+                    return r'[^A-Za-z0-9]*(' + title + r':?.)\(?\[?(' + str(self.year) + '|' + str(self.year - 1) + '|' + str(self.year + 1) + ')'
                 else:
                     title = title.replace('.' + str(self.year), '')
                     return '[^A-Za-z0-9]*(' + title + ')'
             elif self.type == 'show':
                 title = title.replace('.' + str(self.year), '')
-                return '[^A-Za-z0-9]*(' + title + ':?.)(series.|[^A-Za-z0-9]+)?((\(?' + str(self.year) + '\)?.)|(complete.)|(seasons?.[0-9]+.[0-9]?[0-9]?.?)|(S[0-9]+.S?[0-9]?[0-9]?.?)|(S[0-9]+E[0-9]+))'
+                return r'[^A-Za-z0-9]*(' + title + r':?.)(series.|[^A-Za-z0-9]+)?((\(?' + str(self.year) + r'\)?.)|(complete.)|(seasons?.[0-9]+.[0-9]?[0-9]?.?)|(S[0-9]+.S?[0-9]?[0-9]?.?)|(S[0-9]+E[0-9]+))'
             elif self.type == 'season':
                 title = title.replace('.' + str(self.parentYear), '')
-                return '[^A-Za-z0-9]*(' + title + ':?.)(series.|[^A-Za-z0-9]+)?(\(?' + str(self.parentYear) + '\)?.)?(season.' + str(self.index) + '\.|season.' + str("{:02d}".format(self.index)) + '\.|S' + str("{:02d}".format(self.index)) + '\.)'
+                return r'[^A-Za-z0-9]*(' + title + r':?.)(series.|[^A-Za-z0-9]+)?(\(?' + str(self.parentYear) + r'\)?.)?(season.' + str(self.index) + r'\.|season.' + str("{:02d}".format(self.index)) + r'\.|S' + str("{:02d}".format(self.index)) + r'\.)'
             elif self.type == 'episode':
                 title = title.replace('.' + str(self.grandparentYear), '')
                 try:
@@ -594,9 +594,9 @@ class media:
                     airdate_formats += [airdate.strftime(
                         '(%m|%b).*%d.*(%Y|%y)').replace("0", "0?")]
                     airdate_formats = "(" + ")|(".join(airdate_formats) + ")"
-                    return '[^A-Za-z0-9]*(' + title + ':?.)(series.)?(\(?' + str(self.grandparentYear) + '\)?.)?(S' + str("{:02d}".format(self.parentIndex)) + 'E' + str("{:02d}".format(self.index)) + '.|'+airdate_formats+')'
+                    return r'[^A-Za-z0-9]*(' + title + r':?.)(series.)?(\(?' + str(self.grandparentYear) + r'\)?.)?(S' + str("{:02d}".format(self.parentIndex)) + 'E' + str("{:02d}".format(self.index)) + '.|'+airdate_formats+')'
                 except:
-                    return '[^A-Za-z0-9]*(' + title + ':?.)(series.)?(\(?' + str(self.grandparentYear) + '\)?.)?(S' + str("{:02d}".format(self.parentIndex)) + 'E' + str("{:02d}".format(self.index)) + '.)'
+                    return r'[^A-Za-z0-9]*(' + title + r':?.)(series.)?(\(?' + str(self.grandparentYear) + r'\)?.)?(S' + str("{:02d}".format(self.parentIndex)) + 'E' + str("{:02d}".format(self.index)) + '.)'
         else:
             if hasattr(self, 'alternate_titles'):
                 title = '(' + '|'.join(self.alternate_titles) + ')'
@@ -609,7 +609,7 @@ class media:
                     title = releases.rename(self.parentTitle)
                 elif self.type == 'episode':
                     title = releases.rename(self.grandparentTitle)
-            title = title.replace('[', '\[').replace(']', '\]')
+            title = title.replace('[', r'\[').replace(']', r'\]')
             if self.type == 'movie':
                 title = title.replace('.' + str(self.year), '')
                 return '(.*?)(' + title + '.)(.*?)(' + str(self.year) + '|' + str(self.year - 1) + '|' + str(self.year + 1) + ')'
@@ -621,13 +621,13 @@ class media:
                 roman = 'I' if n == 1 else 'II' if n == 2 else 'III' if n == 3 else 'IV' if n == 4 else 'V' if n == 5 else 'VI' if n == 6 else 'VII' if n == 7 else 'VIII' if n == 8 else 'IX' if n == 9 else 'X' if n == 10 else str(
                     n)
                 title = title.replace('.' + str(self.parentYear), '')
-                return '(.*?)(' + title + '.)(.*?)(season[^0-9]?0*' + str(self.index) + '|S0*' + str(self.index) + '(?!E?[0-9])|'+self.anime_count+'|[^A-Z0-9]'+roman+'[^A-Z0-9])'
+                return '(.*?)(' + title + '.)(.*?)(season[^0-9]?0*' + str(self.index) + '|S0*' + str(self.index) + '(?!E?[0-9])|'+self.anime_count+r'|[^A-Z0-9]'+roman+r'[^A-Z0-9])'
             elif self.type == 'episode':
                 n = self.parentIndex
                 roman = 'I' if n == 1 else 'II' if n == 2 else 'III' if n == 3 else 'IV' if n == 4 else 'V' if n == 5 else 'VI' if n == 6 else 'VII' if n == 7 else 'VIII' if n == 8 else 'IX' if n == 9 else 'X' if n == 10 else str(
                     n)
                 title = title.replace('.' + str(self.grandparentYear), '')
-                return '(.*?)(' + title + '.)(.*?)((?<!part)[^0-9A-RT-Z\[]0*('+str(self.parentIndex)+'|'+roman+')[^0-9A-DF-Z\[]0*'+str(self.index)+'(?![A-Z0-9]|\])|(?<!part)[^0-9A-Z\[]0*'+self.anime_count+'(?![A-Z0-9]|\]))'
+                return r'(.*?)(' + title + r'.)(.*?)((?<!part)[^0-9A-RT-Z\[]0*('+str(self.parentIndex)+'|'+roman+r')[^0-9A-DF-Z\[]0*'+str(self.index)+r'(?![A-Z0-9]|\])|(?<!part)[^0-9A-Z\[]0*'+self.anime_count+r'(?![A-Z0-9]|\]))'
 
     def isanime(self):
         if 'anime' in self.genre():
@@ -1161,6 +1161,9 @@ class media:
         refresh_ = False
         i = 0
         self.Releases = []
+        # Lazily load full metadata (seasons/episodes) from Plex discover API
+        if hasattr(self, '_ensure_loaded'):
+            self._ensure_loaded()
         if self.type in ["movie", "show"] and ((not hasattr(self, "title") or self.title == "" or self.title == None) or (not hasattr(self, "year") or self.year == None or self.year == "")):
             ui_print(
                 "error: media item has no title or release year. This unknown movie/show might not be released yet.")
@@ -1256,7 +1259,6 @@ class media:
                                     imdb_scraped = True
                                 if len(self.Releases) > 0:
                                     break
-                        debrid.check(self)
                         parentReleases = copy.deepcopy(self.Releases)
                         # if there are more than 3 uncollected seasons, look for multi-season releases before downloading single-season releases
                         if len(self.Seasons) > 3:
@@ -1393,7 +1395,6 @@ class media:
                             if len(self.Releases) > 0:
                                 break
                     # Set the episodes parent releases to be the newly scraped releases
-                    debrid.check(self)
                     scraped_releases = copy.deepcopy(self.Releases)
             # If there was nothing downloaded, attempt downloading again using the newly scraped releases
             retry = False
@@ -1506,7 +1507,6 @@ class media:
                     episode.downloaded()
 
     def debrid_download(self, force=False):
-        debrid.check(self)
         self.bitrate()
         if len(self.Releases) > 0:
             releases.print_releases(self.Releases, True)
@@ -1517,10 +1517,6 @@ class media:
                 ui_print(
                     "error: it seems that no version applies to this media item! nothing will be downloaded. adjust your version settings.", ui_settings.debug)
             for version in self.versions():
-                debrid_uncached = True
-                for i, rule in enumerate(version.rules):
-                    if rule[0] == "cache status" and rule[1] == 'requirement' and rule[2] == "cached":
-                        debrid_uncached = False
                 self.version = version
                 self.Releases = copy.deepcopy(scraped_releases)
                 releases.sort(self.Releases, self.version)
@@ -1529,20 +1525,13 @@ class media:
                 ver_dld = False
                 for release in copy.deepcopy(self.Releases):
                     self.Releases = [release,]
-                    if hasattr(release, "cached") and len(release.cached) > 0:
-                        if debrid.download(self, stream=True, force=force):
-                            self.downloaded()
-                            downloaded += [True]
-                            ver_dld = True
-                            break
-                    elif not self.type == 'show' and debrid_uncached:
-                        if debrid.download(self, stream=False, force=force):
-                            self.downloaded()
-                            debrid.downloading += [self.query() +
-                                                   ' [' + self.version.name + ']']
-                            downloaded += [True]
-                            ver_dld = True
-                            break
+                    if debrid.download(self, stream=False, force=force):
+                        self.downloaded()
+                        debrid.downloading += [self.query() +
+                                               ' [' + self.version.name + ']']
+                        downloaded += [True]
+                        ver_dld = True
+                        break
                 if not ver_dld:
                     downloaded += [False]
         return True in downloaded, (False in downloaded or len(downloaded) == 0)
@@ -1560,8 +1549,8 @@ class media:
                 files += episode.files()
         elif self.type == 'episode':
             if self.isanime():
-                files += ['[^A-DF-Z0-9\[]0*('+self.anime_count +
-                          '|'+str(self.index)+')(?![A-Z0-9]|\])']
+                files += [r'[^A-DF-Z0-9\[]0*('+self.anime_count +
+                          r'|'+str(self.index)+r')(?![A-Z0-9]|\])']
             else:
                 files += ['S' + str("{:02d}".format(self.parentIndex)) +
                           'E' + str("{:02d}".format(self.index)) + '']
@@ -1589,18 +1578,18 @@ class media:
         season_releases = -1
         episode_releases = [-2] * len(self.Episodes)
         for release in self.Releases:
-            if len(release.cached) > 0 and int(release.resolution) > season_releases:
+            if int(release.resolution) > season_releases:
                 season_releases = int(release.resolution)
         for i, episode in enumerate(self.Episodes):
             ep_match = regex.compile(episode.deviation(), regex.IGNORECASE)
             for release in releases:
-                if len(release.cached) > 0 and int(release.resolution) >= season_releases and int(release.resolution) > episode_releases[i] and ep_match.match(release.title):
+                if int(release.resolution) >= season_releases and int(release.resolution) > episode_releases[i] and ep_match.match(release.title):
                     episode_releases[i] = int(release.resolution)
         lowest = 2160
         for quality in episode_releases:
             if quality < lowest:
                 lowest = quality
-        # If no cached episode release available for all episodes, or the quality is equal or lower to the cached season packs return True
+        # If no episode release available for all episodes, or the quality is equal or lower to the season packs return True
         if lowest <= season_releases:
             return True
         return False

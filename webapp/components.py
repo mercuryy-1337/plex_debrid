@@ -27,15 +27,6 @@ def create_layout(app_state, active_page="dashboard"):
             ui.label("pd_reloaded").classes("text-lg font-bold").style(f"color: {COLORS['primary']}")
             ui.label(f"v{app_version}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
-        with ui.row().classes("items-center gap-4"):
-            status_label = ui.label()
-            if app_state.automation_running:
-                status_label.text = "● Automation Running"
-                status_label.classes("status-running text-sm font-medium")
-            else:
-                status_label.text = "○ Automation Stopped"
-                status_label.classes("status-stopped text-sm font-medium")
-
     with ui.left_drawer(value=True, fixed=True).classes("flex flex-col").style(
         f"width: 220px; background-color: {COLORS['surface']}; padding: 0"
     ) as drawer:
@@ -263,15 +254,6 @@ def create_spa_shell(app_state, initial_page, on_navigate):
         # on_value_change fires AFTER NiceGUI syncs the model — e.value is reliable
         search_input.on_value_change(_on_search_input)
         search_input.on("keydown.enter", _on_search_enter)
-
-        with ui.row().classes("items-center gap-4"):
-            status_label = ui.label()
-            if app_state.automation_running:
-                status_label.text = "● Automation Running"
-                status_label.classes("status-running text-sm font-medium")
-            else:
-                status_label.text = "○ Automation Stopped"
-                status_label.classes("status-stopped text-sm font-medium")
 
     # ── Sidebar ─────────────────────────────────────────────────────
     with ui.left_drawer(value=True, fixed=True).classes("flex flex-col").style(

@@ -709,7 +709,7 @@ async def _render_version_settings(app_state):
         "seeders": {"operators": ["==", ">=", "<=", "highest", "lowest"], "weights": ["requirement", "preference"]},
         "title": {"operators": ["==", "include", "exclude"], "weights": ["requirement", "preference", "upgrade"]},
         "source": {"operators": ["==", "include", "exclude"], "weights": ["requirement", "preference"]},
-        "cache status": {"operators": ["cached", "uncached"], "weights": ["requirement"]},
+        "cache status": {"operators": [], "weights": []},
         "file names": {"operators": ["include", "exclude"], "weights": ["requirement", "preference"]},
         "file sizes": {"operators": ["all files >=", "all files <=", "video files >=", "video files <="], "weights": ["requirement", "preference"]},
     }

@@ -62,11 +62,12 @@ class AutomationEngine:
             import content.services.overseerr
 
             timeout = 5
-            regular_check = 1800
+            regular_check = 3600
             timeout_counter = 0
 
             self.app_state.add_log("Fetching library...")
-            library = content.classes.library()[0]()
+            lib_services = content.classes.library()
+            library = lib_services[0]() if lib_services else []
 
             self.app_state.add_log("Fetching Plex watchlist...")
             plex_watchlist = content.services.plex.watchlist()
@@ -84,45 +85,47 @@ class AutomationEngine:
             except Exception:
                 self.app_state.add_log("Couldn't sort by newest, using default order")
 
+            # Log all watchlist items to content library before processing
+            self._log_all_watchlist_items(watchlists)
+
             if len(library) > 0:
                 self.app_state.add_log(f"Checking new content ({len(watchlists)} items)...")
-                t0 = time.time()
-                for element in self._unique(watchlists):
-                    if self._stop:
-                        break
-                    if hasattr(element, 'download'):
-                        self._log_content_item(element)
-                        element.download(library=library)
-                        t1 = time.time()
-                        if t1 - t0 >= 5:
-                            if plex_watchlist.update() or overseerr_requests.update() or trakt_watchlist.update():
-                                library = content.classes.library()[0]()
-                                if len(library) == 0:
-                                    continue
-                                new_wl = plex_watchlist + trakt_watchlist + overseerr_requests
-                                try:
-                                    new_wl.data.sort(key=lambda s: s.watchlistedAt, reverse=True)
-                                except Exception:
-                                    pass
-                                new_wl = self._unique(new_wl)
-                                for el in new_wl[:]:
-                                    if el in watchlists:
-                                        new_wl.remove(el)
-                                self.app_state.add_log("Found new content while processing...")
-                                for el in new_wl:
-                                    if hasattr(el, 'download'):
-                                        self._log_content_item(el)
-                                        el.download(library=library)
-                            t0 = time.time()
-                self.app_state.add_log("Initial check complete")
+            else:
+                self.app_state.add_log(f"Library empty — checking new content ({len(watchlists)} items)...")
+            t0 = time.time()
+            for element in self._unique(watchlists):
+                if self._stop:
+                    break
+                if hasattr(element, 'download'):
+                    self._log_content_item(element)
+                    element.download(library=library)
+                    t1 = time.time()
+                    if t1 - t0 >= 5:
+                        if plex_watchlist.update() or overseerr_requests.update() or trakt_watchlist.update():
+                            lib_services = content.classes.library()
+                            library = lib_services[0]() if lib_services else []
+                            new_wl = plex_watchlist + trakt_watchlist + overseerr_requests
+                            try:
+                                new_wl.data.sort(key=lambda s: s.watchlistedAt, reverse=True)
+                            except Exception:
+                                pass
+                            new_wl = self._unique(new_wl)
+                            for el in new_wl[:]:
+                                if el in watchlists:
+                                    new_wl.remove(el)
+                            self.app_state.add_log("Found new content while processing...")
+                            for el in new_wl:
+                                if hasattr(el, 'download'):
+                                    self._log_content_item(el)
+                                    el.download(library=library)
+                        t0 = time.time()
+            self.app_state.add_log("Initial check complete")
 
             # Main polling loop
             while not self._stop:
                 if plex_watchlist.update() or overseerr_requests.update() or trakt_watchlist.update():
-                    library = content.classes.library()[0]()
-                    if len(library) == 0:
-                        time.sleep(timeout)
-                        continue
+                    lib_services = content.classes.library()
+                    library = lib_services[0]() if lib_services else []
 
                     watchlists = plex_watchlist + trakt_watchlist + overseerr_requests
                     try:
@@ -161,11 +164,9 @@ class AutomationEngine:
                     except Exception:
                         pass
 
-                    library = content.classes.library()[0]()
+                    lib_services = content.classes.library()
+                    library = lib_services[0]() if lib_services else []
                     timeout_counter = 0
-                    if len(library) == 0:
-                        time.sleep(timeout)
-                        continue
 
                     for element in self._unique(watchlists):
                         if self._stop:
@@ -220,6 +221,10 @@ class AutomationEngine:
             primary = db.get_primary_plex_user()
             if primary:
                 content.services.plex.library.url = primary.get("server_url", "")
+                # Load client_id so Plex cloud API requests carry proper identification
+                if primary.get("client_id"):
+                    content.services.plex.client_id = primary["client_id"]
+                    content.services.plex._update_headers()
 
         # Content services  
         active_content = db.get_setting("Content Services", [])
@@ -310,6 +315,45 @@ class AutomationEngine:
 
         self.app_state.add_log("Settings loaded into modules")
 
+    def _log_all_watchlist_items(self, watchlists):
+        """Batch-insert all watchlist items to content library before processing."""
+        for element in self._unique(watchlists):
+            try:
+                imdb_id = None
+                tmdb_id = None
+                media_type = getattr(element, 'type', 'unknown')
+                title = getattr(element, 'title', 'Unknown')
+
+                if hasattr(element, 'EID'):
+                    for eid in element.EID:
+                        if 'imdb://' in eid:
+                            imdb_id = eid.replace('imdb://', '')
+                        elif 'tmdb://' in eid:
+                            tmdb_id = eid.replace('tmdb://', '')
+
+                # Determine source from the watchlist module
+                source = 'plex'
+                if hasattr(element, 'watchlist'):
+                    mod = getattr(element.watchlist, '__module__', '')
+                    if 'trakt' in mod:
+                        source = 'trakt'
+                    elif 'overseerr' in mod:
+                        source = 'overseerr'
+
+                self.app_state.db.upsert_content_item(
+                    imdb_id=imdb_id,
+                    tmdb_id=tmdb_id,
+                    title=title,
+                    media_type=media_type,
+                    year=getattr(element, 'year', None),
+                    genres=[],
+                    status="watchlisted",
+                    source=source,
+                )
+            except Exception as e:
+                logger.debug(f"Failed to log watchlist item: {e}")
+        self.app_state.add_log(f"Added {len(watchlists)} watchlist items to content library")
+
     def _log_content_item(self, element):
         """Log a content item with its IDs to the database."""
         try:
@@ -332,6 +376,15 @@ class AutomationEngine:
                 except Exception:
                     pass
 
+            # Determine source from the watchlist module
+            source = 'plex'
+            if hasattr(element, 'watchlist'):
+                mod = getattr(element.watchlist, '__module__', '')
+                if 'trakt' in mod:
+                    source = 'trakt'
+                elif 'overseerr' in mod:
+                    source = 'overseerr'
+
             is_anime = hasattr(element, 'isanime') and element.isanime()
             if is_anime:
                 if media_type == "movie":
@@ -347,7 +400,7 @@ class AutomationEngine:
                 year=getattr(element, 'year', None),
                 genres=genres,
                 status="downloading",
-                source=getattr(element, '_source', 'unknown'),
+                source=source,
             )
 
             self.app_state.add_log(

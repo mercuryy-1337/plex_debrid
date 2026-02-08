@@ -90,24 +90,29 @@ async def render(app_state, client: Client):
                         status_text.classes("text-sm font-medium").style(f"color: {COLORS['error']}")
 
                 with ui.row().classes("gap-2"):
-                    async def start_automation():
-                        engine.start()
-                        status_icon.props("color=green")
-                        status_text.text = "Automation is running"
-                        status_text.style(f"color: {COLORS['success']}")
-                        ui.notify("Automation started", type="positive")
+                    async def toggle_automation():
+                        if app_state.automation_running:
+                            engine.stop()
+                            status_icon.props("color=red")
+                            status_text.text = "Automation is stopped"
+                            status_text.style(f"color: {COLORS['error']}")
+                            toggle_btn.props('color=green icon=play_arrow')
+                            toggle_btn.text = "Start"
+                            ui.notify("Automation stopped", type="warning")
+                        else:
+                            engine.start()
+                            status_icon.props("color=green")
+                            status_text.text = "Automation is running"
+                            status_text.style(f"color: {COLORS['success']}")
+                            toggle_btn.props('color=red icon=stop')
+                            toggle_btn.text = "Stop"
+                            ui.notify("Automation started", type="positive")
                         refresh_stats()
 
-                    async def stop_automation():
-                        engine.stop()
-                        status_icon.props("color=red")
-                        status_text.text = "Automation is stopped"
-                        status_text.style(f"color: {COLORS['error']}")
-                        ui.notify("Automation stopped", type="warning")
-                        refresh_stats()
-
-                    ui.button("Start", on_click=start_automation, icon="play_arrow").props("color=green push").classes("px-4")
-                    ui.button("Stop", on_click=stop_automation, icon="stop").props("color=red push").classes("px-4")
+                    if app_state.automation_running:
+                        toggle_btn = ui.button("Stop", on_click=toggle_automation, icon="stop").props("color=red push").classes("px-4")
+                    else:
+                        toggle_btn = ui.button("Start", on_click=toggle_automation, icon="play_arrow").props("color=green push").classes("px-4")
 
         # ─── Stats Cards ─────────────────────────────────────
         stats = app_state.get_stats()

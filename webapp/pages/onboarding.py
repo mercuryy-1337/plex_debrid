@@ -524,8 +524,10 @@ def render_debrid(wizard, app_state):
         ui.label("Folder Paths").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
         ui.label(
             "Download folder: Decypharr will place symlinks here. (this will be for your first Release version)"
-            "Media folder: the app will move completed content here. (this will be for your first Release version)"
         ).classes("text-xs mt-1").style(f"color: {COLORS['text_muted']}")
+        ui.label(
+            "Media folder: the app will move completed content here. (this will be for your first Release version)"
+        ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
         ui.input(
             "Download Folder",
@@ -715,7 +717,6 @@ async def save_and_finish(wizard, app_state):
     # Save default release version (1080p SDR)
     default_triggers = [["retries", "<=", "48"], ["media type", "all", ""]]
     default_rules = [
-        ["cache status", "requirement", "cached", ""],
         ["resolution", "requirement", "<=", "1080"],
         ["resolution", "preference", "highest", ""],
         ["title", "requirement", "exclude", "([^A-Z0-9]|HD|HQ)(CAM|T(ELE)?(S(YNC)?|C(INE)?)|ADS|HINDI)([^A-Z0-9]|RIP|$)"],

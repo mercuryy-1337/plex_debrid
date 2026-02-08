@@ -3,6 +3,7 @@ Content page for pd_reloaded.
 View all content categorized into shows, movies, and anime.
 """
 
+import asyncio
 import logging
 import requests
 from nicegui import ui, Client
@@ -47,25 +48,9 @@ async def render(app_state, client: Client):
         # ─── Content Tabs ──────────────────────────────────
         content_container = ui.column().classes("w-full gap-6")
 
-        def load_content():
+        def _render_items(items):
+            """Render the content items into the container (no enrichment)."""
             content_container.clear()
-            items = app_state.db.get_all_content(
-                media_type=filter_state["type"] if filter_state["type"] != "all" else None,
-                status=filter_state["status"] if filter_state["status"] != "all" else None,
-            )
-
-            # Apply search filter
-            if filter_state["search"]:
-                query = filter_state["search"].lower()
-                items = [i for i in items if query in i["title"].lower() or
-                         query in (i.get("imdb_id") or "").lower() or
-                         query in (i.get("tmdb_id") or "").lower()]
-
-            # Enrich items missing posters
-            needs_enrich = [i for i in items if not i.get("poster_url") and i.get("imdb_id")]
-            if needs_enrich:
-                _enrich_content_items(app_state.db, items)
-
             with content_container:
                 if not items:
                     empty_state("search_off", "No content found matching your filters.")
@@ -129,11 +114,37 @@ async def render(app_state, client: Client):
                         </q-td>
                     """)
 
+        async def load_content():
+            """Load content items, render immediately, then enrich posters in background."""
+            items = app_state.db.get_all_content(
+                media_type=filter_state["type"] if filter_state["type"] != "all" else None,
+                status=filter_state["status"] if filter_state["status"] != "all" else None,
+            )
+
+            # Apply search filter
+            if filter_state["search"]:
+                query = filter_state["search"].lower()
+                items = [i for i in items if query in i["title"].lower() or
+                         query in (i.get("imdb_id") or "").lower() or
+                         query in (i.get("tmdb_id") or "").lower()]
+
+            # Render immediately with whatever data we have
+            _render_items(items)
+
+            # Enrich missing posters in a background executor (non-blocking)
+            needs_enrich = [i for i in items if not i.get("poster_url") and i.get("imdb_id")]
+            if needs_enrich:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: _enrich_content_items(app_state.db, items)
+                )
+                # Re-render with enriched data
+                _render_items(items)
+
         def update_filter(key, value):
             filter_state[key] = value
-            load_content()
+            asyncio.ensure_future(load_content())
 
-        load_content()
+        await load_content()
 
 
 def _render_section(title, icon, items, count):

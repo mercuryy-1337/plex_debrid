@@ -463,7 +463,9 @@ def _render_scrape_results(app_state, results, search_state, container):
                           icon="auto_awesome").props("color=amber push")
 
             for release in results:
-                is_pack = _is_season_pack(release["title"])
+                media_type = search_state.get("media_type", "auto")
+                is_pack = (media_type != "movie"
+                           and _is_season_pack(release["title"]))
                 border_color = "#3B82F6" if is_pack else COLORS['primary']
                 with ui.card().classes("w-full p-3").style(
                     f"background: {COLORS['surface_light']}; "
