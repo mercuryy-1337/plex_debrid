@@ -132,7 +132,7 @@ def create_app(config_dir="."):
             ui.run_javascript(
                 f"window.history.pushState(null, '', '/{url_path}')")
 
-        content_area = create_spa_shell(app_state, page, navigate)
+        content_area = create_spa_shell(app_state, page, navigate, client)
 
         # Render initial page
         with content_area:

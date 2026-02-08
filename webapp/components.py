@@ -77,7 +77,7 @@ def create_layout(app_state, active_page="dashboard"):
     return drawer
 
 
-def create_spa_shell(app_state, initial_page, on_navigate):
+def create_spa_shell(app_state, initial_page, on_navigate, client=None):
     """Build header + sidebar once and return the content container.
 
     Sidebar items trigger *on_navigate(page_name)* instead of doing a full
@@ -86,6 +86,7 @@ def create_spa_shell(app_state, initial_page, on_navigate):
     Args:
         on_navigate: async callable(page_name: str) invoked when a sidebar
             item is clicked.
+        client: the NiceGUI ``Client`` instance for this connection.
 
     Returns:
         content_area: the ``ui.column`` to render page content into.
@@ -114,6 +115,7 @@ def create_spa_shell(app_state, initial_page, on_navigate):
 
         # ── Search bar ──────────────────────────────────────────────
         from webapp.cinemeta_feed import search as _feed_search
+        from webapp.pages.scraper_page import _open_scrape_dialog
         import html as _html
 
         # Wrapper div with relative positioning so the dropdown sits underneath
@@ -159,13 +161,34 @@ def create_spa_shell(app_state, initial_page, on_navigate):
                     type_icon = "movie" if h_type == "movie" else "tv"
                     type_label = "Movie" if h_type == "movie" else "Series"
 
-                    async def _pick(_, name=h_name):
+                    async def _pick(
+                        _,
+                        _name=h_name, _type=h_type, _poster=h_poster,
+                        _year=h_year, _rating=h_rating, _imdb=hit.get("id", ""),
+                    ):
                         _search_state["suppress"] = True
-                        search_input.value = name
+                        search_input.value = _name
                         suggestions_menu.close()
-                        active["page"] = "results"
-                        _build_nav()
-                        await on_navigate(f"results:{name}")
+                        # Show loading overlay while scrape dialog prepares
+                        with ui.dialog().props("persistent seamless") as loading_dlg:
+                            with ui.card().style(
+                                f"background: {COLORS['surface']}; padding: 12px 24px;"
+                                " border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5);"
+                            ).classes("items-center"):
+                                with ui.row().classes("items-center gap-3 no-wrap"):
+                                    ui.spinner("dots", size="md", color="amber")
+                                    ui.label(f"Loading {_name}...").style(
+                                        f"color: {COLORS['text']}; font-size: 0.85rem;"
+                                    )
+                        loading_dlg.open()
+                        try:
+                            await _open_scrape_dialog(
+                                app_state, client,
+                                imdb_id=_imdb, title=_name, media_type=_type,
+                                poster_url=_poster, year=_year, rating=_rating,
+                            )
+                        finally:
+                            loading_dlg.close()
 
                     with ui.row().classes(
                         "items-center gap-3 w-full cursor-pointer px-3 py-2"
