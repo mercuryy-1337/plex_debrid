@@ -672,12 +672,16 @@ async def _proceed_download(app_state, release, release_data, search_state,
             meta_year = search_state.get("meta_year") or meta_year
             meta_genres = search_state.get("meta_genres") or meta_genres
 
+            dl_info_hash = (dl_result.get("info_hash")
+                            if isinstance(dl_result, dict) else None)
+
             app_state.db.add_download_log(
                 title=cinemeta_name,
                 release_title=release.title,
                 media_type=final_type,
                 imdb_id=imdb_id,
                 tmdb_id=tmdb_id,
+                info_hash=dl_info_hash.lower() if dl_info_hash else None,
                 debrid_service=f"decypharr/{ver_name} ({category})",
                 scraper_source=release.source,
                 resolution=str(getattr(release, "resolution", "")),
@@ -792,6 +796,7 @@ def _execute_download(app_state, release, stream, cinemeta_name,
         out = {
             "success": True, "error": None,
             "sent_title": release.title, "poll_completed": False,
+            "info_hash": info_hash or None,
         }
 
         if info_hash:
@@ -806,19 +811,47 @@ def _execute_download(app_state, release, stream, cinemeta_name,
             try:
                 poll_result = client.wait_for_completion(
                     info_hash, timeout=300, poll_interval=5,
-                    remove_on_complete=True,
+                    remove_on_complete=False,
                     progress_callback=_on_progress,
                 )
                 if poll_result["success"]:
-                    logger.info("Torrent completed and removed: %s", info_hash[:16])
+                    completed_torrent = poll_result.get("torrent")
                     out["poll_completed"] = True
                     app_state.update_activity(
                         activity_id, status="processing", progress=1.0)
-                    import time as _time
-                    _time.sleep(2)
+
+                    # ── Move content to media folder ──────────
+                    from webapp.automation import move_to_media_folder, refresh_plex_library
+                    moved_path = None
+                    if completed_torrent:
+                        moved_path = move_to_media_folder(
+                            app_state, completed_torrent, category,
+                            cinemeta_name, activity_id,
+                        )
+
+                    # ── Remove torrent from Decypharr (after move)
+                    try:
+                        client.remove_torrent(info_hash, delete_files=False)
+                    except Exception:
+                        logger.debug("Failed to remove torrent %s", info_hash[:16])
+
+                    out["moved_path"] = moved_path
+                    out["info_hash"] = info_hash
+
+                    # ── Refresh Plex library ──────────────────
+                    if moved_path:
+                        try:
+                            refresh_plex_library(
+                                app_state, media_type, moved_path)
+                        except Exception:
+                            logger.debug("Plex refresh error (non-fatal)")
+
+                    logger.info("Torrent completed: %s → %s",
+                                info_hash[:16], moved_path or "not moved")
                     app_state.update_activity(
                         activity_id, status="completed", progress=1.0)
-                    _time.sleep(5)
+                    import time as _time
+                    _time.sleep(3)
                     app_state.remove_activity(activity_id)
                     activity_id = None
                 else:

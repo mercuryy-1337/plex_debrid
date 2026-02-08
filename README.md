@@ -52,6 +52,12 @@ pd_reloaded replaces the legacy CLI with a full NiceGUI web frontend, SQLite dat
 - Legacy CLI mode still available via `--legacy` flag
 - Debug logging toggle from the UI
 - Automation engine with background scheduling
+- **Concurrent downloads** — up to 4 movies + 1 series simultaneously (5 total), semaphore-controlled
+- **Post-download processing** — on completion: move symlinks from download folder to media folder → mark collected → trigger Plex partial scan
+- **Duplicate prevention** — torrent info hashes stored in download logs; already-downloaded hashes are skipped
+- **Plex Location-aware refresh** — only scans the library section whose root path contains the moved content
+- **Live activity badge** — sidebar shows count of active downloads, auto-refreshes every 2 seconds
+- **Watchlist auto-remove** — respects "none" setting; DB setting properly loaded into legacy modules
 
 ---
 
@@ -164,13 +170,18 @@ Plex Watchlist / Trakt / Overseerr
 - [x] Plex browser auth + multi-user
 - [x] Decypharr integration (add, poll, cleanup)
 - [x] Manual scrape & download with version selection
-- [x] Per-version download & media folder paths (symlink management groundwork)
+- [x] Per-version download & media folder paths
 - [x] Automated content monitoring & download
 - [x] SQLite database with migration from legacy settings
-- [ ] Scheduled library refresh after download
-- [ ] Automatic symlink relocation (download folder → media folder on completion)
+- [x] Concurrent download processing (4 movies + 1 series simultaneously)
+- [x] Automatic symlink relocation (download folder → media folder on completion)
+- [x] Plex partial library scan after download (Location-aware section matching)
+- [x] Duplicate download prevention (info_hash tracking)
+- [x] Live activity tracking with sidebar badge
+- [x] Watchlist auto-remove respects "none" setting
 - [ ] Discord notifications
 - [ ] Jellyfin library support
+- [ ] Upgrade detection (re-download higher quality releases)
 - [ ] Import/export settings
 
 ---

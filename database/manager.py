@@ -181,6 +181,15 @@ class DatabaseManager:
             session.flush()
             return log.id
 
+    def is_hash_downloaded(self, info_hash):
+        """Check if a torrent hash has already been successfully downloaded."""
+        if not info_hash:
+            return False
+        with self.session_scope() as session:
+            return session.query(DownloadLog).filter_by(
+                info_hash=info_hash.lower(), status="completed"
+            ).first() is not None
+
     def get_download_logs(self, content_item_id=None, limit=100):
         with self.session_scope() as session:
             query = session.query(DownloadLog)
@@ -197,6 +206,7 @@ class DatabaseManager:
                     "media_type": log.media_type,
                     "imdb_id": log.imdb_id,
                     "tmdb_id": log.tmdb_id,
+                    "info_hash": log.info_hash,
                     "debrid_service": log.debrid_service,
                     "scraper_source": log.scraper_source,
                     "resolution": log.resolution,

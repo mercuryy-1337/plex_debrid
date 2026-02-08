@@ -120,6 +120,7 @@ class DownloadLog(Base):
     media_type = Column(String(20), nullable=True)
     imdb_id = Column(String(20), nullable=True)
     tmdb_id = Column(String(20), nullable=True)
+    info_hash = Column(String(64), nullable=True, index=True)  # torrent hash for dedup
     debrid_service = Column(String(50), nullable=True)
     scraper_source = Column(String(50), nullable=True)
     resolution = Column(String(20), nullable=True)

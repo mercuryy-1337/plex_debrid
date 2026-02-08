@@ -3,13 +3,184 @@ Automation engine for pd_reloaded.
 Bridges the legacy download automation with the new web UI.
 """
 
+import os
+import shutil
 import time
 import logging
-import itertools
 from threading import Thread, Semaphore
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
+
+
+# ─── Shared post-download helpers (used by automation + scraper page) ─────
+
+def get_category_media_folders(db):
+    """Build a category → media_folder mapping from release versions."""
+    versions_data = db.get_release_versions(enabled_only=True) if db else []
+    mapping = {}
+    for v in versions_data:
+        cat = v.get("category", "default")
+        mf = v.get("media_folder", "")
+        if mf and cat not in mapping:
+            mapping[cat] = mf
+    return mapping
+
+
+def move_to_media_folder(app_state, torrent, category, title, activity_id=None):
+    """Move completed content from symlink dir to the media folder.
+
+    Reads the ``content_path`` from the torrent dict returned by Decypharr
+    and moves it to the media folder configured for the given *category*.
+
+    Returns the destination path on success, ``None`` on failure.
+    """
+    content_path = torrent.get("content_path", "")
+    if not content_path:
+        logger.warning("No content_path in torrent data for %s", title)
+        app_state.add_log(f"\u26a0 No content_path for: {title}")
+        return None
+
+    category_media_folders = get_category_media_folders(app_state.db)
+    media_folder = category_media_folders.get(category)
+    if not media_folder:
+        app_state.add_log(
+            f"\u26a0 No media folder configured for category '{category}' \u2014 "
+            f"skipping move for: {title}"
+        )
+        logger.warning("No media_folder for category %s", category)
+        return None
+
+    folder_name = os.path.basename(content_path)
+    dest_path = os.path.join(media_folder, folder_name)
+
+    try:
+        os.makedirs(media_folder, exist_ok=True)
+
+        if os.path.exists(dest_path):
+            app_state.add_log(
+                f"\u26a0 Destination already exists, removing old: {dest_path}"
+            )
+            if os.path.isdir(dest_path):
+                shutil.rmtree(dest_path)
+            else:
+                os.remove(dest_path)
+
+        if activity_id:
+            app_state.update_activity(activity_id, status="moving")
+        shutil.move(content_path, dest_path)
+
+        app_state.add_log(
+            f"\u2714 Moved to media folder: {folder_name} \u2192 {media_folder}"
+        )
+        logger.info("Moved %s \u2192 %s", content_path, dest_path)
+        return dest_path
+
+    except Exception as e:
+        app_state.add_log(
+            f"\u2717 Failed to move content: {title} \u2014 {e}"
+        )
+        logger.exception("Failed to move %s \u2192 %s", content_path, dest_path)
+        return None
+
+
+def refresh_plex_library(app_state, media_type, moved_path):
+    """Trigger a Plex partial library scan for *moved_path*.
+
+    *media_type* should be one of ``"movie"``, ``"show"``, ``"season"``,
+    ``"anime_show"``, ``"anime_movie"`` etc.  It is mapped to the Plex
+    section type (``"movie"`` or ``"show"``).
+
+    Only the section whose ``<Location path>`` is a parent of *moved_path*
+    is scanned — this avoids triggering scans on unrelated sections (e.g.
+    Anime when the content landed in the TV Shows folder).
+    """
+    import requests as _requests
+
+    try:
+        import content.services.plex as plex_svc
+
+        if not plex_svc.users:
+            return
+        token = plex_svc.users[0][1]
+        server_url = getattr(plex_svc.library, 'url', '')
+        if not server_url or not token:
+            return
+
+        section_type = ("show" if media_type in (
+            "show", "season", "episode", "anime_show") else "movie")
+
+        sections_url = f"{server_url}/library/sections/?X-Plex-Token={token}"
+        resp = _requests.get(sections_url, timeout=10)
+        if not resp.ok:
+            logger.warning("Plex sections request failed: %s", resp.status_code)
+            return
+
+        from xml.etree import ElementTree
+        root = ElementTree.fromstring(resp.content)
+
+        refresh_sections = getattr(plex_svc.library.refresh, 'sections', [])
+        partial = getattr(plex_svc.library.refresh, 'partial', 'true')
+        delay = 2
+        try:
+            delay = float(getattr(plex_svc.library.refresh, 'delay', '2'))
+        except (ValueError, TypeError):
+            pass
+
+        time.sleep(delay)
+
+        scanned = False
+        for directory in root.findall('.//Directory'):
+            key = directory.get('key', '')
+            dtype = directory.get('type', '')
+            dtitle = directory.get('title', '')
+
+            if key not in refresh_sections or dtype != section_type:
+                continue
+
+            # Check this section's Location paths — only scan if our
+            # moved_path actually falls under one of them.
+            for location in directory.findall('Location'):
+                loc_path = location.get('path', '').rstrip('/')
+                if not loc_path:
+                    continue
+                if not (moved_path == loc_path
+                        or moved_path.startswith(loc_path + '/')):
+                    continue
+
+                # Build the scan path from the Location root + folder name
+                # so it exactly matches what Plex knows about.
+                folder_name = os.path.basename(moved_path.rstrip('/'))
+                scan_path = loc_path + '/' + folder_name
+                encoded_path = _requests.utils.quote(scan_path)
+
+                if partial == "true":
+                    url = (f"{server_url}/library/sections/{key}"
+                           f"/refresh?path={encoded_path}"
+                           f"&X-Plex-Token={token}")
+                else:
+                    url = (f"{server_url}/library/sections/{key}"
+                           f"/refresh?X-Plex-Token={token}")
+                _requests.get(url, timeout=10)
+                scanned = True
+                app_state.add_log(
+                    f"\U0001f4da Plex scan: \"{dtitle}\" at {scan_path}"
+                )
+                logger.info("Plex refresh: section %s (%s) path=%s",
+                            key, dtitle, scan_path)
+                break  # one location match per section is enough
+
+        if not scanned:
+            app_state.add_log(
+                f"\u26a0 No Plex section found for path: {moved_path}"
+            )
+            logger.warning(
+                "No Plex section Location matched moved_path=%s "
+                "(sections=%s, type=%s)", moved_path, refresh_sections,
+                section_type)
+
+    except Exception as e:
+        logger.debug("Plex library refresh error: %s", e)
 
 
 class AutomationEngine:
@@ -261,6 +432,17 @@ class AutomationEngine:
         if lib_ignore:
             content.classes.ignore.active = lib_ignore
 
+        # Plex library refresh settings
+        plex_sections = db.get_setting("Plex library refresh")
+        if plex_sections and isinstance(plex_sections, list):
+            content.services.plex.library.refresh.sections = [
+                s[0] if isinstance(s, list) else s for s in plex_sections
+            ]
+        partial_scan = db.get_setting("Plex library partial scan", "true")
+        content.services.plex.library.refresh.partial = partial_scan
+        scan_delay = db.get_setting("Plex library refresh delay", "2")
+        content.services.plex.library.refresh.delay = scan_delay
+
         # Trakt settings
         trakt_users = db.get_trakt_users()
         if trakt_users:
@@ -307,6 +489,10 @@ class AutomationEngine:
         (RealDebrid, AllDebrid, …) is configured — Decypharr is the download
         backend.  We monkey-patch ``debrid.download`` so the entire legacy
         scrape → sort → download pipeline works end-to-end via Decypharr.
+
+        After Decypharr finishes, the content folder (symlinks) is moved from
+        the download path to the final media folder, the item is marked as
+        collected, and a Plex library partial scan is triggered.
         """
         import debrid
 
@@ -355,6 +541,15 @@ class AutomationEngine:
             if not magnet and not info_hash:
                 return False
 
+            # ── Dedup: skip if this hash was already downloaded ───
+            if info_hash and app_state.db.is_hash_downloaded(info_hash):
+                app_state.add_log(
+                    f"⏭ Skipping (already downloaded): {release.title[:80]}"
+                )
+                logger.info("Skipping duplicate hash %s: %s",
+                            info_hash[:16], release.title[:60])
+                return True  # treat as success so legacy flow doesn't retry
+
             # ── Determine category from the current version ───────
             category = "default"
             ver_name = "unknown"
@@ -390,7 +585,7 @@ class AutomationEngine:
                 f"Release: {release.title[:90]} | "
                 f"{size_gb:.1f}GB | {ver_name}/{category}"
             )
-            app_state.add_log(f"⬇ {log_msg}")
+            app_state.add_log(f"\u2b07 {log_msg}")
             logger.info(log_msg)
 
             # ── Send to Decypharr ────────────────────────────────
@@ -407,7 +602,7 @@ class AutomationEngine:
 
                 if not result:
                     app_state.add_log(
-                        f"✗ Decypharr rejected: {release.title[:80]} [{ver_name}/{category}]"
+                        f"\u2717 Decypharr rejected: {release.title[:80]} [{ver_name}/{category}]"
                     )
                     app_state.remove_activity(activity_id)
                     return False
@@ -416,6 +611,7 @@ class AutomationEngine:
                     activity_id, status="sent_to_decypharr")
 
                 # ── Poll for completion (up to 5 min) ────────────
+                completed_torrent = None  # torrent dict on success
                 if info_hash:
                     try:
                         from webapp.decypharr import TorrentState
@@ -436,26 +632,40 @@ class AutomationEngine:
                             info_hash,
                             timeout=300,
                             poll_interval=5,
-                            remove_on_complete=True,
+                            remove_on_complete=False,
                             progress_callback=_on_progress,
                         )
                         if poll["success"]:
+                            completed_torrent = poll.get("torrent")
                             app_state.update_activity(
-                                activity_id, status="completed", progress=1.0)
-                            time.sleep(5)
+                                activity_id, status="processing", progress=1.0)
+                        else:
+                            app_state.add_log(
+                                f"\u2717 Download failed: {clean_title} ({poll.get('state', 'unknown')})"
+                            )
                             app_state.remove_activity(activity_id)
                             activity_id = None
+                            return False
                     except Exception as poll_err:
                         logger.debug("Torrent polling error (non-fatal): %s",
                                      poll_err)
-                else:
-                    app_state.update_activity(
-                        activity_id, status="completed", progress=1.0)
-                    time.sleep(5)
-                    app_state.remove_activity(activity_id)
-                    activity_id = None
 
-                # ── Log download + update content library ─────────
+                # ── Move content to media folder ─────────────────
+                moved_path = None
+                if completed_torrent:
+                    moved_path = move_to_media_folder(
+                        app_state, completed_torrent, category,
+                        clean_title, activity_id,
+                    )
+
+                # ── Remove torrent from Decypharr (after move) ───
+                if info_hash:
+                    try:
+                        client.remove_torrent(info_hash, delete_files=False)
+                    except Exception:
+                        logger.debug("Failed to remove torrent %s", info_hash[:16])
+
+                # ── Log download ─────────────────────────────────
                 try:
                     app_state.db.add_download_log(
                         title=clean_title,
@@ -463,6 +673,7 @@ class AutomationEngine:
                         media_type=media_type,
                         imdb_id=imdb_id,
                         tmdb_id=tmdb_id,
+                        info_hash=info_hash.lower() if info_hash else None,
                         debrid_service=f"decypharr/{ver_name} ({category})",
                         scraper_source=getattr(release, 'source', 'unknown'),
                         resolution=str(getattr(release, 'resolution', '')),
@@ -472,6 +683,7 @@ class AutomationEngine:
                 except Exception:
                     logger.debug("Failed to log download")
 
+                # ── Update content library → collected ───────────
                 try:
                     is_anime = (hasattr(element, 'isanime')
                                 and element.isanime())
@@ -493,12 +705,24 @@ class AutomationEngine:
                 except Exception:
                     logger.debug("Failed to update content item")
 
+                # ── Trigger Plex library refresh ─────────────────
+                if moved_path:
+                    refresh_plex_library(app_state, media_type, moved_path)
+
+                # Done
+                if activity_id:
+                    app_state.update_activity(
+                        activity_id, status="completed", progress=1.0)
+                    time.sleep(3)
+                    app_state.remove_activity(activity_id)
+                    activity_id = None
+
                 return True
 
             except Exception as e:
                 logger.exception("Decypharr download error for %s",
                                  release.title[:60])
-                app_state.add_log(f"✗ Decypharr error: {e}")
+                app_state.add_log(f"\u2717 Decypharr error: {e}")
                 return False
             finally:
                 if activity_id:
