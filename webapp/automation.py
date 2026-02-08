@@ -42,11 +42,8 @@ class AutomationEngine:
             return
 
         self._stop = True
-        self.app_state.add_log("Stopping automation...")
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=30)
         self.app_state.automation_running = False
-        self.app_state.add_log("Automation stopped")
+        self.app_state.add_log("Stopping automation after current item finishes...")
 
     def _run_loop(self):
         """Main automation loop - mirrors the legacy threaded() function."""
@@ -115,6 +112,8 @@ class AutomationEngine:
                                     new_wl.remove(el)
                             self.app_state.add_log("Found new content while processing...")
                             for el in new_wl:
+                                if self._stop:
+                                    break
                                 if hasattr(el, 'download'):
                                     self._log_content_item(el)
                                     el.download(library=library)

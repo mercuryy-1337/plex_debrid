@@ -87,7 +87,7 @@ def create_app(config_dir="."):
             "display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
             "<div style='text-align:center'>"
             "<p style='font-size:1.4em;color:#E5A00D'>&#10003; Plex Authentication Successful</p>"
-            "<p>You can close this window.</p>"
+            "<p>This window will close automatically.</p>"
             "<script>setTimeout(function(){window.close();},1500);</script>"
             "</div></body></html>"
         )
@@ -154,7 +154,7 @@ def run_app(config_dir=".", host="0.0.0.0", port=8008):
         host=host,
         port=port,
         reload=False,
-        show=True,
+        show=False,
         favicon="🎬",
         dark=True,
     )
