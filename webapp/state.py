@@ -131,8 +131,8 @@ class AppState:
         movies = [c for c in all_content if c["media_type"] == "movie"]
         # Shows that are NOT anime
         shows = [c for c in all_content if c["media_type"] in ("show", "anime_show") and not c.get("is_anime")]
-        # Anime = shows with anime/animation genre
-        anime = [c for c in all_content if c.get("is_anime")]
+        # Anime = anime shows only (anime movies still count under Movies)
+        anime = [c for c in all_content if c.get("is_anime") and c["media_type"] in ("show", "anime_show")]
         
         collected = [c for c in all_content if c["status"] == "collected"]
         downloading = [c for c in all_content if c["status"] == "downloading"]

@@ -355,53 +355,53 @@ def content_card(item):
             badge_class = "badge-show"
             type_label = "Show"
 
+    status = item.get("status", "unknown")
+    status_colors = {
+        "collected": COLORS["success"],
+        "downloading": COLORS["warning"],
+        "watchlisted": COLORS["info"],
+        "ignored": COLORS["error"],
+    }
+    s_color = status_colors.get(status, COLORS["text_muted"])
+
     with ui.card().classes("content-card").style(
-        "width: 200px; min-height: 420px; max-height: 420px; overflow: hidden; display: flex; flex-direction: column;"
+        "width: 185px; overflow: hidden; padding: 0; border-radius: 8px;"
     ):
-        # Poster placeholder
+        # Poster
         poster = item.get("poster_url")
         if poster:
             ui.image(poster).classes("w-full").style(
-                "height: 280px; min-height: 280px; max-height: 280px; object-fit: cover; flex-shrink: 0;"
+                "height: 260px; object-fit: cover; display: block;"
             )
         else:
             with ui.element("div").classes("w-full flex items-center justify-center").style(
-                f"height: 280px; min-height: 280px; max-height: 280px; background: {COLORS['surface_light']}; flex-shrink: 0;"
+                f"height: 260px; background: {COLORS['surface_light']};"
             ):
                 ui.icon("movie").classes("text-5xl").style(f"color: {COLORS['text_muted']}")
 
-        with ui.column().classes("p-3 gap-1").style("flex: 1; min-height: 0; overflow: hidden;"):
-            with ui.row().classes("items-center gap-2"):
+        # Info section — fixed layout, left-aligned, compact
+        with ui.column().style(
+            "padding: 10px 12px; gap: 4px;"
+        ):
+            # Row 1: type badge + year
+            with ui.row().style("align-items: center; gap: 6px;"):
                 ui.html(f'<span class="{badge_class}">{type_label}</span>')
                 if item.get("year"):
-                    ui.label(str(item["year"])).classes("text-xs").style(f"color: {COLORS['text_muted']}")
+                    ui.label(str(item["year"])).style(
+                        f"color: {COLORS['text_muted']}; font-size: 0.75rem; line-height: 1;"
+                    )
 
-            ui.label(item.get("title", "Unknown")).classes("text-sm font-semibold").style(
-                f"color: {COLORS['text']}; max-width: 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+            # Row 2: title
+            ui.label(item.get("title", "Unknown")).style(
+                f"color: {COLORS['text']}; font-size: 0.85rem; font-weight: 600;"
+                " line-height: 1.2; white-space: nowrap; overflow: hidden;"
+                " text-overflow: ellipsis; max-width: 165px;"
             )
 
-            # Status badge
-            status = item.get("status", "unknown")
-            status_colors = {
-                "collected": COLORS["success"],
-                "downloading": COLORS["warning"],
-                "watchlisted": COLORS["info"],
-                "ignored": COLORS["error"],
-            }
-            ui.label(status.capitalize()).classes("text-xs font-medium").style(
-                f"color: {status_colors.get(status, COLORS['text_muted'])}"
+            # Row 3: status
+            ui.label(status.capitalize()).style(
+                f"color: {s_color}; font-size: 0.7rem; font-weight: 500;"
             )
-
-            # IDs — single line, truncated
-            ids = []
-            if item.get("imdb_id"):
-                ids.append(f"IMDB: {item['imdb_id']}")
-            if item.get("tmdb_id"):
-                ids.append(f"TMDB: {item['tmdb_id']}")
-            if ids:
-                ui.label(" | ".join(ids)).classes("text-xs").style(
-                    f"color: {COLORS['text_muted']}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;"
-                )
 
 
 def page_header(title, subtitle=None):
