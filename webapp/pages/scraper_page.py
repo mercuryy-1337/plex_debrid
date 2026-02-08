@@ -217,20 +217,30 @@ def _render_result_card(app_state, client, item, media_type):
                     f"color: {COLORS['primary']}; background: {COLORS['primary']}18; "
                     "border-radius: 0; padding: 1px 6px; display: inline-block")
 
-            async def _scrape(
-                _,
-                _imdb=imdb_id, _name=name, _type=media_type,
-                _poster=poster, _year=year, _rating=rating,
-            ):
-                await _open_scrape_dialog(
-                    app_state, client,
-                    imdb_id=_imdb, title=_name, media_type=_type,
-                    poster_url=_poster, year=_year, rating=_rating,
-                )
+            scrape_btn_row = ui.row().classes("w-full items-center justify-center gap-2 mt-1")
+            with scrape_btn_row:
+                _card_spinner = ui.spinner("dots", size="sm", color="amber")
+                _card_spinner.visible = False
 
-            ui.button("Scrape", icon="search", on_click=_scrape).props(
-                "color=amber push dense size=sm"
-            ).classes("w-full mt-1 text-xs")
+                async def _scrape(
+                    _,
+                    _imdb=imdb_id, _name=name, _type=media_type,
+                    _poster=poster, _year=year, _rating=rating,
+                    _sp=_card_spinner,
+                ):
+                    _sp.visible = True
+                    try:
+                        await _open_scrape_dialog(
+                            app_state, client,
+                            imdb_id=_imdb, title=_name, media_type=_type,
+                            poster_url=_poster, year=_year, rating=_rating,
+                        )
+                    finally:
+                        _sp.visible = False
+
+                ui.button("Scrape", icon="search", on_click=_scrape).props(
+                    "color=amber push dense size=sm"
+                ).classes("flex-1 text-xs")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -289,12 +299,20 @@ async def _open_scrape_dialog(app_state, client, *, imdb_id, title, media_type,
                     for v in versions:
                         version_options[str(v["id"])] = v["name"]
 
+                    def _on_version_change(e):
+                        search_state["version"] = e.value
+                        if e.value and e.value != "none":
+                            scrape_btn.enable()
+                        else:
+                            scrape_btn.disable()
+
                     ui.select(
                         version_options, value="none", label="Release Version",
-                        on_change=lambda e: search_state.update({"version": e.value}),
+                        on_change=_on_version_change,
                     ).classes("min-w-48").props("outlined dense dark color=amber")
 
-                    scrape_btn = ui.button("Scrape Now", icon="search").props("color=amber push")
+                    scrape_btn = ui.button("Filter Results", icon="filter_list").props("color=amber push")
+                    scrape_btn.disable()
                     spinner = ui.spinner("dots", size="lg", color="amber").classes("ml-2")
                     spinner.visible = False
 
@@ -327,7 +345,9 @@ async def _open_scrape_dialog(app_state, client, *, imdb_id, title, media_type,
                             f"color: {COLORS['error']}")
                 finally:
                     spinner.visible = False
-                    scrape_btn.enable()
+                    # Only re-enable if a version is selected
+                    if search_state.get("version") and search_state["version"] != "none":
+                        scrape_btn.enable()
 
             scrape_btn.on("click", do_scrape)
             await do_scrape()  # auto-scrape on open
@@ -408,13 +428,18 @@ def _run_scrape(app_state, query, search_state):
 def _is_season_pack(title: str) -> bool:
     """Detect if a release title looks like a season pack (not a single episode)."""
     t = title.upper()
-    # Episode ranges
+    has_single_ep = bool(regex.search(r'S\d{1,2}[\s.]?E\d{1,3}(?!\s?-\s?E?\d)', t))
+    # Also detect "Season 2 - 06" / "Season.2.-.12" style individual episodes
+    if not has_single_ep:
+        has_single_ep = bool(regex.search(r'SEASON[\s.]*\d+[\s.]*-[\s.]*\d+', t))
+    # Episode ranges like S02E01-12 or S02E01-E12
     if regex.search(r'S\d{1,2}[\s.]?E\d{1,3}\s?-\s?E?\d{1,3}', t):
         return True
-    if regex.search(r'S\d{1,2}(?![\s.]?E\d)', t):
-        if not regex.search(r'S\d{1,2}[\s.]?E\d{1,3}', t):
-            return True
-    if regex.search(r'(?:SEASON|COMPLETE|FULL\.SEASON)', t):
+    # Has S01 but no episode number → season pack
+    if regex.search(r'S\d{1,2}(?![\s.]?E\d)', t) and not has_single_ep:
+        return True
+    # Explicit markers — but only if there's no individual episode pattern
+    if not has_single_ep and regex.search(r'(?:SEASON|COMPLETE|FULL\.SEASON)', t):
         return True
     return False
 
@@ -429,7 +454,8 @@ def _render_scrape_results(app_state, results, search_state, container):
 
                 async def auto_download():
                     if results:
-                        await _download_release(app_state, results[0], search_state, stream=False)
+                        best = max(results, key=lambda r: r.get("seeders", 0) or 0)
+                        await _download_release(app_state, best, search_state, stream=False)
                     else:
                         ui.notify("No releases available", type="warning")
 
