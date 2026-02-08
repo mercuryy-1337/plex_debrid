@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 # ─── Activity item status flow ──────────────────────────────────────
-# sent → downloading → downloaded → processing → completed
-ACTIVITY_STATUSES = ("sent", "downloading", "downloaded", "processing", "completed")
+# sent → sent_to_decypharr → downloading → downloaded → processing → completed
+ACTIVITY_STATUSES = ("sent", "sent_to_decypharr", "downloading", "downloaded", "processing", "completed")
 
 
 class AppState:

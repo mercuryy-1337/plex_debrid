@@ -405,6 +405,20 @@ def _run_scrape(app_state, query, search_state):
         return []
 
 
+def _is_season_pack(title: str) -> bool:
+    """Detect if a release title looks like a season pack (not a single episode)."""
+    t = title.upper()
+    # Episode ranges
+    if regex.search(r'S\d{1,2}[\s.]?E\d{1,3}\s?-\s?E?\d{1,3}', t):
+        return True
+    if regex.search(r'S\d{1,2}(?![\s.]?E\d)', t):
+        if not regex.search(r'S\d{1,2}[\s.]?E\d{1,3}', t):
+            return True
+    if regex.search(r'(?:SEASON|COMPLETE|FULL\.SEASON)', t):
+        return True
+    return False
+
+
 def _render_scrape_results(app_state, results, search_state, container):
     """Render scrape results as a list with download buttons."""
     with container:
@@ -423,17 +437,27 @@ def _render_scrape_results(app_state, results, search_state, container):
                           icon="auto_awesome").props("color=amber push")
 
             for release in results:
+                is_pack = _is_season_pack(release["title"])
+                border_color = "#3B82F6" if is_pack else COLORS['primary']
                 with ui.card().classes("w-full p-3").style(
                     f"background: {COLORS['surface_light']}; "
-                    f"border-left: 3px solid {COLORS['primary']}"
+                    f"border-left: 3px solid {border_color}"
                 ):
                     with ui.row().classes("items-start justify-between w-full gap-4"):
                         with ui.column().classes("flex-1 gap-1"):
-                            title_text = release["title"]
-                            if len(title_text) > 100:
-                                title_text = title_text[:100] + "..."
-                            ui.label(title_text).classes("text-sm font-medium").style(
-                                f"color: {COLORS['text']}")
+                            with ui.row().classes("items-center gap-2"):
+                                title_text = release["title"]
+                                if len(title_text) > 100:
+                                    title_text = title_text[:100] + "..."
+                                ui.label(title_text).classes("text-sm font-medium").style(
+                                    f"color: {COLORS['text']}")
+                                if is_pack:
+                                    ui.html(
+                                        '<span style="background: #3B82F6; color: #fff; '
+                                        'font-size: 0.6rem; font-weight: 700; padding: 1px 6px; '
+                                        'letter-spacing: 0.04em; white-space: nowrap">'
+                                        'SEASON PACK</span>'
+                                    )
 
                             with ui.row().classes("items-center gap-3 flex-wrap"):
                                 ui.label(f"📡 {release['source']}").classes("text-xs").style(
@@ -554,11 +578,21 @@ async def _proceed_download(app_state, release, release_data, search_state,
         cinemeta_name = search_state.get("cinemeta_name") or query or release.title
         imdb_id = search_state.get("imdb_id") or ""
 
+        # ── Create activity immediately so it appears on the dashboard ──
+        activity_id = app_state.add_activity(
+            title=cinemeta_name,
+            release_title=release.title,
+            info_hash="",
+            category=category,
+            imdb_id=imdb_id,
+        )
+
         dl_result = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: _execute_download(
                 app_state, release, stream, cinemeta_name,
-                media_type, version, imdb_id=imdb_id),
+                media_type, version, imdb_id=imdb_id,
+                activity_id=activity_id),
         )
 
         dl_success = (dl_result.get("success", False)
@@ -636,13 +670,12 @@ async def _proceed_download(app_state, release, release_data, search_state,
 
 
 def _execute_download(app_state, release, stream, cinemeta_name,
-                       media_type, version, imdb_id=""):
+                       media_type, version, imdb_id="", activity_id=None):
     """Execute the download via Decypharr using global API key.
 
     Tracks the download lifecycle on app_state's activity queue:
-    sent → downloading → downloaded → processing → (removed).
+    sent → sent_to_decypharr → downloading → downloaded → processing → (removed).
     """
-    activity_id = None
     try:
         from webapp.decypharr import DecypharrClient, TorrentState
 
@@ -701,13 +734,11 @@ def _execute_download(app_state, release, stream, cinemeta_name,
                      release.title[:60], version.get("name", "?"), category)
 
         # ── Activity tracking ────────────────────────────────
-        activity_id = app_state.add_activity(
-            title=cinemeta_name,
-            release_title=release.title,
-            info_hash=info_hash or "",
-            category=category,
-            imdb_id=imdb_id,
-        )
+        # Update the pre-created activity now that Decypharr has accepted
+        if activity_id:
+            app_state.update_activity(
+                activity_id, status="sent_to_decypharr",
+                info_hash=info_hash or "")
 
         out = {
             "success": True, "error": None,

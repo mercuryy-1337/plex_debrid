@@ -16,11 +16,12 @@ logger = logging.getLogger(__name__)
 
 # Human-friendly labels per status
 _STATUS_LABELS = {
-    "sent":        "Sent",
-    "downloading": "Downloading",
-    "downloaded":  "Downloaded",
-    "processing":  "Processing",
-    "completed":   "Completed",
+    "sent":              "Sent",
+    "sent_to_decypharr": "Sent to Decypharr",
+    "downloading":       "Downloading",
+    "downloaded":        "Downloaded",
+    "processing":        "Processing",
+    "completed":         "Completed",
 }
 
 # Table column definitions
@@ -102,11 +103,12 @@ async def render(app_state, client: Client):
                     {{{{ props.row.category }}}}
                 </q-td>
                 <q-td key="status" :props="props" style="font-size: 0.8rem; font-weight: 600"
-                    :style="props.row.status === 'Downloading' ? 'color: {COLORS['warning']}' :
+                    :style="props.row.status === 'Sent to Decypharr' ? 'color: {COLORS['info']}' :
+                            props.row.status === 'Downloading' ? 'color: {COLORS['warning']}' :
                             props.row.status === 'Downloaded' ? 'color: {COLORS['success']}' :
                             props.row.status === 'Processing' ? 'color: {COLORS['primary']}' :
                             props.row.status === 'Completed' ? 'color: {COLORS['success']}' :
-                            'color: {COLORS['info']}'">
+                            'color: {COLORS['text_muted']}'">
                     {{{{ props.row.status }}}}
                 </q-td>
                 <q-td key="progress" :props="props" style="color: {COLORS['text_muted']}; font-size: 0.8rem; font-weight: 500">
