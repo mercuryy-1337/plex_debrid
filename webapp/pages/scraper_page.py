@@ -146,6 +146,15 @@ async def render(app_state, client: Client, search_query: str = ""):
             empty_state("search_off", f"No results found for \"{search_query}\"")
             return
 
+        # Build a set of IMDB IDs already in the library (collected)
+        collected_ids = set()
+        try:
+            for ci in app_state.db.get_all_content(status="collected"):
+                if ci.get("imdb_id"):
+                    collected_ids.add(ci["imdb_id"])
+        except Exception:
+            pass
+
         # ── Movies section ───────────────────────────────────
         if movies:
             with ui.row().classes("items-center gap-2 mt-2"):
@@ -155,7 +164,7 @@ async def render(app_state, client: Client, search_query: str = ""):
 
             with ui.row().classes("w-full flex-wrap gap-4"):
                 for item in movies:
-                    _render_result_card(app_state, client, item, "movie")
+                    _render_result_card(app_state, client, item, "movie", collected_ids)
 
         # ── Series section ───────────────────────────────────
         if series:
@@ -166,14 +175,14 @@ async def render(app_state, client: Client, search_query: str = ""):
 
             with ui.row().classes("w-full flex-wrap gap-4"):
                 for item in series:
-                    _render_result_card(app_state, client, item, "series")
+                    _render_result_card(app_state, client, item, "series", collected_ids)
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Result card
 # ═══════════════════════════════════════════════════════════════════
 
-def _render_result_card(app_state, client, item, media_type):
+def _render_result_card(app_state, client, item, media_type, collected_ids=None):
     """Render a single result card (poster + info + scrape button)."""
     name = item.get("name", "Unknown")
     year = item.get("releaseInfo", "")
@@ -182,6 +191,7 @@ def _render_result_card(app_state, client, item, media_type):
     rating = item.get("imdbRating", "")
     type_label = "Movie" if media_type == "movie" else "Series"
     badge_class = "badge-movie" if media_type == "movie" else "badge-show"
+    in_library = collected_ids and imdb_id in collected_ids
 
     ic = "movie" if media_type == "movie" else "tv"
     # Placeholder sits behind the <img>; on error we just hide the img.
@@ -237,6 +247,13 @@ def _render_result_card(app_state, client, item, media_type):
                         f'<span style="color:{COLORS["primary"]};font-size:0.7rem;'
                         f'background:{COLORS["primary"]}18;border-radius:3px;'
                         f'padding:1px 6px;">{imdb_id}</span>'
+                    )
+
+                if in_library:
+                    ui.html(
+                        '<span style="color:#fff;font-size:0.65rem;font-weight:700;'
+                        'background:#22C55E;border-radius:3px;padding:1px 6px;'
+                        'letter-spacing:0.03em;">IN LIBRARY</span>'
                     )
 
             # Bottom: scrape button — raw div, fixed width
@@ -543,6 +560,64 @@ async def _download_release(app_state, release_data, search_state, stream=True):
         if not release:
             ui.notify("Release object not available", type="negative")
             return
+
+        # ── Hash dedup check ─────────────────────────────────
+        info_hash = release_data.get("hash", "") or getattr(release, "hash", "")
+        if info_hash and app_state.db.is_hash_downloaded(info_hash):
+            with ui.dialog() as hash_dlg, ui.card().classes("p-4").style(
+                f"background: {COLORS['surface']}; min-width: 380px"
+            ):
+                ui.label("Already Downloaded").classes("text-base font-bold mb-1").style(
+                    f"color: {COLORS['primary']}")
+                ui.label(
+                    "This exact release (same torrent hash) has already been downloaded."
+                ).classes("text-sm mb-3").style(f"color: {COLORS['text_muted']}")
+                with ui.row().classes("w-full justify-end gap-2"):
+                    ui.button("Cancel", on_click=hash_dlg.close).props("flat color=grey")
+
+                    async def force_hash():
+                        hash_dlg.close()
+                        await _download_release_inner(app_state, release_data, search_state, stream)
+
+                    ui.button("Download Anyway", on_click=force_hash).props("color=amber push")
+            hash_dlg.open()
+            return
+
+        # ── Content-level library check ──────────────────────
+        imdb_id = search_state.get("imdb_id", "")
+        if imdb_id:
+            is_collected, collected_title = app_state.db.is_collected(imdb_id=imdb_id)
+            if is_collected:
+                with ui.dialog() as lib_dlg, ui.card().classes("p-4").style(
+                    f"background: {COLORS['surface']}; min-width: 380px"
+                ):
+                    ui.label("Already In Library").classes("text-base font-bold mb-1").style(
+                        f"color: {COLORS['primary']}")
+                    ui.label(
+                        f'"{collected_title or imdb_id}" is already collected in your library.'
+                    ).classes("text-sm mb-3").style(f"color: {COLORS['text_muted']}")
+                    with ui.row().classes("w-full justify-end gap-2"):
+                        ui.button("Cancel", on_click=lib_dlg.close).props("flat color=grey")
+
+                        async def force_lib():
+                            lib_dlg.close()
+                            await _download_release_inner(app_state, release_data, search_state, stream)
+
+                        ui.button("Download Anyway", on_click=force_lib).props("color=amber push")
+                lib_dlg.open()
+                return
+
+        await _download_release_inner(app_state, release_data, search_state, stream)
+
+    except Exception as e:
+        logger.exception("Download error")
+        ui.notify(f"Download error: {e}", type="negative")
+
+
+async def _download_release_inner(app_state, release_data, search_state, stream=True):
+    """Version selection + download (called after dedup checks pass)."""
+    try:
+        release = release_data.get("_release_obj")
 
         versions = app_state.db.get_release_versions()
         enabled_versions = [v for v in versions if v.get("enabled")]

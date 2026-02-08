@@ -787,6 +787,99 @@ async def _render_version_settings(app_state):
 
             ui.button("Add Version", on_click=open_add_dialog, icon="add").props("color=amber push dense")
 
+            async def open_import_dialog():
+                """Open dialog to import versions from pasted JSON."""
+                with ui.dialog() as import_dlg, ui.card().classes("p-4").style(
+                    f"background: {COLORS['surface']}; min-width: 480px; max-width: 600px"
+                ):
+                    ui.label("Import Versions from JSON").classes("text-base font-bold mb-1").style(
+                        f"color: {COLORS['primary']}")
+                    ui.label(
+                        'Paste your settings.json content (or just the "Versions" array) below.'
+                    ).classes("text-xs mb-3").style(f"color: {COLORS['text_muted']}")
+
+                    json_input = ui.textarea(
+                        placeholder='{"Versions": [...]} or [[...], ...]'
+                    ).classes("w-full").props("outlined rows=10").style(
+                        f"background: {COLORS['surface_light']}; color: {COLORS['text']}; font-family: monospace; font-size: 12px"
+                    )
+                    result_label = ui.label("").classes("text-xs mt-1").style("color: transparent")
+
+                    async def do_import():
+                        raw = json_input.value.strip()
+                        if not raw:
+                            result_label.style(f"color: {COLORS['error']}")
+                            result_label.text = "Please paste JSON content."
+                            return
+                        try:
+                            parsed = json.loads(raw)
+                        except json.JSONDecodeError as e:
+                            result_label.style(f"color: {COLORS['error']}")
+                            result_label.text = f"Invalid JSON: {e}"
+                            return
+
+                        # Accept either {"Versions": [...]} or bare [...]
+                        if isinstance(parsed, dict) and "Versions" in parsed:
+                            versions_list = parsed["Versions"]
+                        elif isinstance(parsed, list):
+                            versions_list = parsed
+                        else:
+                            result_label.style(f"color: {COLORS['error']}")
+                            result_label.text = 'Expected {"Versions": [...]} or a list of version arrays.'
+                            return
+
+                        if not isinstance(versions_list, list) or not versions_list:
+                            result_label.style(f"color: {COLORS['error']}")
+                            result_label.text = "Versions list is empty or invalid."
+                            return
+
+                        existing = db.get_release_versions()
+                        start_order = max((v["sort_order"] for v in existing), default=-1) + 1
+                        imported = 0
+                        for i, ver in enumerate(versions_list):
+                            if not isinstance(ver, list) or len(ver) < 4:
+                                continue
+                            name = ver[0]
+                            triggers = ver[1] if isinstance(ver[1], list) else []
+                            language = ver[2] if isinstance(ver[2], str) else "en"
+                            rules = ver[3] if isinstance(ver[3], list) else []
+                            category = ver[4] if len(ver) > 4 and isinstance(ver[4], str) else "default"
+
+                            enabled = True
+                            clean = name.replace("\u0336", "").replace("\u0335", "").replace("\u0334", "")
+                            if clean != name:
+                                name = clean
+                                enabled = False
+
+                            db.add_release_version(
+                                name=name,
+                                enabled=enabled,
+                                triggers=triggers,
+                                language=language,
+                                rules=rules,
+                                category=category,
+                                sort_order=start_order + i,
+                            )
+                            imported += 1
+
+                        if imported:
+                            _save_versions_to_json()
+                            _refresh_versions()
+                            import_dlg.close()
+                            ui.notify(f"Imported {imported} version(s).", type="positive")
+                        else:
+                            result_label.style(f"color: {COLORS['error']}")
+                            result_label.text = "No valid versions found in the provided JSON."
+
+                    with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                        ui.button("Cancel", on_click=import_dlg.close).props("flat color=grey")
+                        ui.button("Import", on_click=do_import, icon="file_upload").props("color=amber push")
+                import_dlg.open()
+
+            ui.button("Import", on_click=open_import_dialog, icon="file_upload").props(
+                "flat color=amber dense"
+            ).tooltip("Import versions from settings.json")
+
         # Versions list container
         versions_container = ui.column().classes("w-full gap-0")
 

@@ -149,6 +149,20 @@ class DatabaseManager:
             if item:
                 item.status = status
 
+    def is_collected(self, imdb_id=None, tmdb_id=None):
+        """Check if a content item is already collected by IMDB or TMDB ID."""
+        with self.session_scope() as session:
+            q = session.query(ContentItem).filter_by(status="collected")
+            if imdb_id:
+                item = q.filter_by(imdb_id=imdb_id).first()
+            elif tmdb_id:
+                item = q.filter_by(tmdb_id=tmdb_id).first()
+            else:
+                return False, None
+            if item:
+                return True, item.title
+            return False, None
+
     def upsert_content_item(self, imdb_id=None, tmdb_id=None, **kwargs):
         """Insert or update a content item by IMDB or TMDB ID."""
         with self.session_scope() as session:
@@ -509,6 +523,37 @@ class DatabaseManager:
                         tracker_pattern=rule_data[0],
                         debrid_short=rule_data[1]
                     )
+
+        # Migrate release versions
+        if "Versions" in settings and isinstance(settings["Versions"], list):
+            for i, ver in enumerate(settings["Versions"]):
+                if not isinstance(ver, list) or len(ver) < 4:
+                    continue
+                name = ver[0]
+                triggers = ver[1] if isinstance(ver[1], list) else []
+                language = ver[2] if isinstance(ver[2], str) else "en"
+                rules = ver[3] if isinstance(ver[3], list) else []
+                category = ver[4] if len(ver) > 4 and isinstance(ver[4], str) else "default"
+
+                # Detect disabled versions (strikethrough name)
+                enabled = True
+                if name and all(c in "\u0336\u0335\u0334" or True for c in name):
+                    # Check for actual strikethrough chars
+                    clean = name.replace("\u0336", "").replace("\u0335", "").replace("\u0334", "")
+                    if clean != name:
+                        name = clean
+                        enabled = False
+
+                self.add_release_version(
+                    name=name,
+                    enabled=enabled,
+                    triggers=triggers,
+                    language=language,
+                    rules=rules,
+                    category=category,
+                    sort_order=i,
+                )
+            logger.info(f"Migrated {len(settings['Versions'])} release versions from settings.json")
 
         self.set_setting("setup_complete", True, category="system")
         self.set_setting("migrated_from_json", True, category="system")
