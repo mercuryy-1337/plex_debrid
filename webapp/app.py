@@ -54,11 +54,8 @@ def create_app(config_dir="."):
     # Check if we need onboarding
     needs_onboarding = not app_state.db.is_setup_complete()
 
-    # Try to migrate legacy settings if they exist and DB not set up
-    if needs_onboarding and app_state.db.has_legacy_settings():
-        logger.info("Found legacy settings.json, migrating to database...")
-        app_state.db.migrate_from_json()
-        needs_onboarding = not app_state.db.is_setup_complete()
+    # Note whether legacy settings exist — onboarding will offer import
+    app_state.has_legacy_settings = app_state.db.has_legacy_settings()
 
     app_state.needs_onboarding = needs_onboarding
 

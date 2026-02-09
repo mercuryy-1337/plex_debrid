@@ -523,16 +523,18 @@ def render_debrid(wizard, app_state):
 
         ui.label("Folder Paths").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
         ui.label(
-            "Download folder: Decypharr will place symlinks here. (this will be for your first Release version)"
+            "Download base folder: Decypharr will place symlinks here. "
+            "Each release version automatically gets a sub-folder named after its category "
+            "(e.g. /mnt/symlinks/default)."
         ).classes("text-xs mt-1").style(f"color: {COLORS['text_muted']}")
         ui.label(
             "Media folder: the app will move completed content here. (this will be for your first Release version)"
         ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
         ui.input(
-            "Download Folder",
+            "Download Base Folder",
             value=wizard.get("download_folder", ""),
-            placeholder="/mnt/symlinks/default",
+            placeholder="/mnt/symlinks",
             on_change=lambda e: wizard.update({"download_folder": e.value}),
         ).classes("w-full mt-2").props("outlined dark color=amber")
 
@@ -649,6 +651,45 @@ def render_extras(wizard, app_state):
             discord_input = ui.input("Discord Webhook URL", value="").classes("w-full").props(
                 "outlined dark color=amber")
 
+        # Import from legacy settings.json
+        if app_state.has_legacy_settings:
+            ui.separator().classes("my-4")
+            with ui.card().classes("w-full p-4").style(
+                f"background: {COLORS['surface_light']}; border: 1px solid {COLORS['primary']}"
+            ):
+                with ui.row().classes("items-center gap-3"):
+                    ui.icon("file_upload").classes("text-2xl").style(f"color: {COLORS['primary']}")
+                    with ui.column().classes("gap-0 flex-1"):
+                        ui.label("Import from settings.json").classes("text-base font-semibold").style(
+                            f"color: {COLORS['text']}")
+                        ui.label(
+                            "A legacy settings.json file was found. You can import your existing "
+                            "configuration (Plex users, debrid services, scraper sources, versions, etc.) "
+                            "instead of configuring everything from scratch."
+                        ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
+
+                import_status = ui.label("").classes("text-sm mt-2")
+
+                async def do_import_legacy():
+                    try:
+                        ok = app_state.db.migrate_from_json()
+                        if ok:
+                            import_status.text = "✓ Settings imported successfully! Click Complete Setup to finish."
+                            import_status.style(f"color: {COLORS['success']}")
+                            ui.notify("Legacy settings imported", type="positive")
+                        else:
+                            import_status.text = "✗ Import failed — file may be missing or invalid."
+                            import_status.style(f"color: {COLORS['error']}")
+                            ui.notify("Import failed", type="negative")
+                    except Exception as e:
+                        import_status.text = f"✗ Import error: {e}"
+                        import_status.style(f"color: {COLORS['error']}")
+                        ui.notify(f"Import error: {e}", type="negative")
+
+                ui.button(
+                    "Import Settings", on_click=do_import_legacy, icon="file_upload"
+                ).props("color=blue push").classes("mt-2")
+
         with ui.row().classes("mt-6 justify-between w-full"):
             ui.button("Back", on_click=wizard["prev_step"]).props("flat color=grey")
             ui.button("Complete Setup", on_click=lambda: asyncio.ensure_future(save_and_finish(wizard, app_state))).props(
@@ -701,6 +742,11 @@ async def save_and_finish(wizard, app_state):
         from webapp.decypharr import generate_api_key
         db.set_setting("Decypharr API Key", generate_api_key(), "debrid")
 
+    # Save global download base folder
+    global_download_base = wizard.get("download_folder", "").strip().rstrip("/")
+    if global_download_base:
+        db.set_setting("Global Download Folder", global_download_base, "debrid")
+
     # Save scraper sources
     for src in wizard.get("scraper_sources", ["torrentio"]):
         cfg = {}
@@ -727,6 +773,11 @@ async def save_and_finish(wizard, app_state):
         ["seeders", "preference", "highest", ""],
         ["size", "requirement", ">=", "0.1"],
     ]
+    # Auto-derive download_folder from global base + category
+    default_category = "default"
+    derived_download_folder = (
+        f"{global_download_base}/{default_category}" if global_download_base else ""
+    )
     db.add_release_version(
         name="1080p SDR",
         enabled=True,
@@ -734,8 +785,8 @@ async def save_and_finish(wizard, app_state):
         language="en",
         rules=default_rules,
         sort_order=0,
-        category="default",
-        download_folder=wizard.get("download_folder", "").strip(),
+        category=default_category,
+        download_folder=derived_download_folder,
         media_folder=wizard.get("media_folder", "").strip(),
     )
 

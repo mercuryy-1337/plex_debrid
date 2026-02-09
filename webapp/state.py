@@ -24,6 +24,7 @@ class AppState:
         self.config_dir = "."
         self.db = None
         self.needs_onboarding = True
+        self.has_legacy_settings = False
 
         # Automation state
         self.automation_running = False

@@ -538,6 +538,53 @@ async def _render_debrid_settings(app_state):
 
             ui.button("Save", on_click=save_decypharr, icon="save").props("color=amber push dense")
 
+    # Global Download Folder
+    with ui.card().classes("w-full p-4 mt-4"):
+        ui.label("Global Download Folder").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
+        ui.label(
+            "Base path where Decypharr places symlinks. Each release version automatically "
+            "gets a sub-folder named after its category (e.g. /mnt/symlinks/default). "
+            "Changing this will update the download folder for all existing versions."
+        ).classes("text-sm").style(f"color: {COLORS['text_muted']}")
+        ui.separator().classes("my-2")
+
+        global_dl = db.get_setting("Global Download Folder", "")
+        global_dl_input = ui.input(
+            "Download Base Folder", value=global_dl,
+            placeholder="/mnt/symlinks"
+        ).classes("w-full").props("outlined dark color=amber")
+
+        # Show current derived paths
+        derived_label_container = ui.column().classes("w-full gap-1 mt-2")
+
+        def _show_derived_paths(base_path):
+            derived_label_container.clear()
+            base = base_path.strip().rstrip("/")
+            if not base:
+                return
+            versions = db.get_release_versions()
+            with derived_label_container:
+                for v in versions:
+                    cat = v.get("category", "default")
+                    ui.label(f"{v['name']}: {base}/{cat}").classes("text-xs font-mono").style(
+                        f"color: {COLORS['text_muted']}")
+
+        _show_derived_paths(global_dl)
+
+        async def save_global_download_folder():
+            new_base = global_dl_input.value.strip().rstrip("/")
+            db.set_setting("Global Download Folder", new_base, "debrid")
+            # Update all existing versions' download_folder
+            if new_base:
+                versions = db.get_release_versions()
+                for v in versions:
+                    cat = v.get("category", "default")
+                    db.update_release_version(v["id"], download_folder=f"{new_base}/{cat}")
+            _show_derived_paths(new_base)
+            ui.notify("Global download folder saved and all versions updated", type="positive")
+
+        ui.button("Save", on_click=save_global_download_folder, icon="save").props("color=amber push dense").classes("mt-2")
+
     # Decypharr info card
     with ui.card().classes("w-full p-4 mt-4"):
         ui.label("Decypharr Status").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
@@ -761,11 +808,14 @@ async def _render_version_settings(app_state):
                     for v in versions:
                         async def pick(src=v):
                             pick_dlg.close()
+                            dup_cat = f"{src.get('category', 'default')}_copy"
+                            _gl_base = db.get_setting("Global Download Folder", "").rstrip("/")
+                            dup_dl = f"{_gl_base}/{dup_cat}" if _gl_base else src.get("download_folder", "")
                             dup = {
                                 "name": f"{src['name']} (copy)",
                                 "language": src.get("language", "en"),
-                                "category": f"{src.get('category', 'default')}_copy",
-                                "download_folder": src.get("download_folder", ""),
+                                "category": dup_cat,
+                                "download_folder": dup_dl,
                                 "media_folder": src.get("media_folder", ""),
                                 "triggers": [list(t) for t in src.get("triggers", [])],
                                 "rules": [list(r) for r in src.get("rules", [])],
@@ -1017,20 +1067,35 @@ async def _render_version_settings(app_state):
                     with ui.card().classes("w-full p-3").style(f"background: {COLORS['surface_light']}"):
                         ui.label("Folder Paths").classes("text-sm font-bold mb-2").style(f"color: {COLORS['primary']}")
                         ui.label(
-                            "Download folder: where Decypharr places symlinks. "
+                            "Download folder is auto-derived from the global download base folder + category name. "
+                            "Change the category above to update it. "
                             "Media folder: where the app moves completed content."
                         ).classes("text-xs mb-2").style(f"color: {COLORS['text_muted']}")
+
+                        # Auto-derive download folder from global base + category
+                        _global_dl_base = db.get_setting("Global Download Folder", "").rstrip("/")
+                        _cat = edit_state.get("category", "default") or "default"
+                        _derived_dl = f"{_global_dl_base}/{_cat}" if _global_dl_base else edit_state.get("download_folder", "")
+
                         with ui.row().classes("w-full gap-3"):
                             dl_folder_input = ui.input(
-                                "Download Folder",
-                                value=edit_state.get("download_folder", ""),
-                                placeholder="/mnt/symlinks/version1"
-                            ).classes("flex-1").props("outlined dense dark color=amber")
+                                "Download Folder (auto-derived)",
+                                value=_derived_dl,
+                                placeholder="Set global download folder in Decypharr tab"
+                            ).classes("flex-1").props("outlined dense dark color=amber readonly")
                             media_folder_input = ui.input(
                                 "Media Folder",
                                 value=edit_state.get("media_folder", ""),
                                 placeholder="/mnt/media/shows"
                             ).classes("flex-1").props("outlined dense dark color=amber")
+
+                        # Update download folder when category changes
+                        def _on_category_change(e):
+                            cat_val = e.value.strip() if e.value else "default"
+                            if _global_dl_base:
+                                dl_folder_input.value = f"{_global_dl_base}/{cat_val}"
+
+                        category_input.on("update:model-value", _on_category_change)
 
                     # ── Triggers Section ──
                     with ui.card().classes("w-full p-3").style(f"background: {COLORS['surface_light']}"):
@@ -1190,11 +1255,15 @@ async def _render_version_settings(app_state):
                     if not category_input.value.strip():
                         ui.notify("Category is required (used for Decypharr routing)", type="negative")
                         return
+                    # Auto-derive download folder from global base + category
+                    cat_val = category_input.value.strip()
+                    global_base = db.get_setting("Global Download Folder", "").rstrip("/")
+                    derived_dl = f"{global_base}/{cat_val}" if global_base and cat_val else dl_folder_input.value.strip()
                     data = {
                         "name": name_input.value.strip(),
                         "language": lang_input.value.strip() or "en",
-                        "category": category_input.value.strip(),
-                        "download_folder": dl_folder_input.value.strip(),
+                        "category": cat_val,
+                        "download_folder": derived_dl,
                         "media_folder": media_folder_input.value.strip(),
                         "triggers": edit_state["triggers"],
                         "rules": edit_state["rules"],

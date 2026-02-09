@@ -555,7 +555,6 @@ class DatabaseManager:
                 )
             logger.info(f"Migrated {len(settings['Versions'])} release versions from settings.json")
 
-        self.set_setting("setup_complete", True, category="system")
         self.set_setting("migrated_from_json", True, category="system")
 
         logger.info("Legacy settings migration complete!")
