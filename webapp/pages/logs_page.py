@@ -135,26 +135,15 @@ async def render(app_state, client: Client):
 
         load_logs()
 
-        # ─── Live Automation Log ────────────────────────────
-        with ui.card().classes("w-full mt-4"):
-            with ui.row().classes("items-center justify-between p-4"):
-                ui.label("Live Automation Log").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
-                ui.button("Clear", on_click=lambda: (app_state.clear_logs(), refresh_live_log()), icon="clear_all").props(
-                    "flat color=grey size=sm")
-
-            live_log_container = ui.column().classes("p-4 gap-0 max-h-80 overflow-y-auto w-full").style(
-                f"background: {COLORS['background']}; border-radius: 0; font-family: 'JetBrains Mono', monospace"
-            )
-
-            def refresh_live_log():
-                live_log_container.clear()
-                with live_log_container:
-                    for entry in app_state.automation_logs[-50:]:
-                        ui.label(entry).classes("log-entry text-xs").style(f"color: {COLORS['text_muted']}")
-                    if not app_state.automation_logs:
-                        ui.label("No log entries yet.").classes("text-xs").style(f"color: {COLORS['text_muted']}")
-
-            refresh_live_log()
-
-            # Auto-refresh timer
-            ui.timer(5.0, refresh_live_log)
+        # ─── View Application Logs ──────────────────────────
+        with ui.card().classes("w-full mt-4 p-4"):
+            with ui.row().classes("items-center justify-between w-full"):
+                ui.label("Application Logs").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
+                ui.label(
+                    "View the full unified application log (console + file). "
+                    "Adjust verbosity in Settings → Advanced → Logging."
+                ).classes("text-sm").style(f"color: {COLORS['text_muted']}")
+            ui.button(
+                "View Logs", icon="terminal",
+                on_click=lambda: ui.navigate.to("/debug/logs"),
+            ).props("color=amber push").classes("mt-3")

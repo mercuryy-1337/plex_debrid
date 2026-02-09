@@ -78,26 +78,30 @@ def run_legacy(config_dir, service_mode):
 
 def run_webapp(config_dir, host="0.0.0.0", port=8008):
     """Run the modern NiceGUI web interface."""
-    # Configure logging so it appears on CLI
-    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    log_datefmt = "%H:%M:%S"
-    logging.basicConfig(
-        level=logging.INFO,
-        format=log_format,
-        datefmt=log_datefmt,
-        stream=sys.stdout,
-    )
-    # Apply saved debug mode if any
+    from webapp.log_config import setup_logging
+
+    # Read saved log preferences from DB (best-effort)
+    log_level = "info"
+    log_to_file = False
     try:
         from database.manager import DatabaseManager
         _db = DatabaseManager(config_dir)
         _db.initialize(config_dir)
-        if _db.get_setting("Debug printing", "false") == "true":
-            logging.getLogger().setLevel(logging.DEBUG)
-            logging.getLogger("webapp").setLevel(logging.DEBUG)
-            print("[pd_reloaded] Debug logging enabled (from saved settings)")
+        log_level = _db.get_setting("Log level", "info")
+        # Backwards compat: old "Debug printing" bool → new level
+        if log_level not in ("info", "debug", "trace"):
+            if _db.get_setting("Debug printing", "false") == "true":
+                log_level = "debug"
+            else:
+                log_level = "info"
+        log_to_file = _db.get_setting("Log to file", "false") == "true"
     except Exception:
         pass
+
+    setup_logging(log_level=log_level, log_to_file=log_to_file, config_dir=config_dir)
+    logging.getLogger(__name__).info(
+        "Logging initialised  level=%s  file=%s", log_level, log_to_file
+    )
 
     from webapp.app import create_app, run_app
     create_app(config_dir)

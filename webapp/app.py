@@ -114,6 +114,62 @@ def create_app(config_dir="."):
     async def health():
         return {"status": "healthy", "onboarding_required": app_state.needs_onboarding}
 
+    # ── Debug / logs page (standalone, not inside SPA shell) ────────
+    @ui.page("/debug/logs")
+    async def debug_logs_page(client: Client):
+        from webapp.log_config import get_log_lines
+        from webapp.theme import apply_theme, COLORS
+        apply_theme()
+
+        ui.add_head_html("""
+        <style>
+          .log-line { font-family: 'JetBrains Mono', 'Fira Code', monospace;
+                      font-size: 12px; line-height: 1.5; white-space: pre-wrap;
+                      word-break: break-all; }
+        </style>
+        """)
+
+        with ui.column().classes("p-4 gap-2 w-full"):
+            with ui.row().classes("items-center justify-between w-full"):
+                ui.label("Application Logs").classes("text-xl font-bold").style(
+                    f"color: {COLORS['primary']}")
+                with ui.row().classes("gap-2"):
+                    lines_select = ui.select(
+                        {200: "200 lines", 500: "500 lines", 1000: "1 000 lines", 2000: "All"},
+                        value=500, label="Lines",
+                    ).classes("w-36").props("outlined dense dark color=amber")
+                    ui.button("Back", icon="arrow_back",
+                              on_click=lambda: ui.navigate.to("/logs")).props("flat color=grey")
+
+            log_area = ui.column().classes(
+                "w-full gap-0 p-3 overflow-y-auto"
+            ).style(
+                f"background: {COLORS['background']}; border: 1px solid rgba(255,255,255,0.08); "
+                "max-height: 80vh; border-radius: 4px"
+            )
+
+            def _refresh():
+                log_area.clear()
+                lines = get_log_lines(last_n=lines_select.value)
+                with log_area:
+                    if not lines:
+                        ui.label("No log entries yet.").classes("text-sm").style(
+                            f"color: {COLORS['text_muted']}")
+                    else:
+                        for line in lines:
+                            ui.label(line).classes("log-line").style(
+                                f"color: {COLORS['text_muted']}")
+                # Auto-scroll to bottom
+                ui.run_javascript(
+                    f"document.getElementById('c{log_area.id}')?.scrollTo(0, 999999)"
+                )
+
+            _refresh()
+            # Auto-refresh every 3 seconds
+            ui.timer(3.0, _refresh)
+
+            lines_select.on("update:model-value", lambda _: _refresh())
+
     # ── SPA shell for all other pages ───────────────────────────────
     @ui.page("/")
     @ui.page("/{_path:path}")

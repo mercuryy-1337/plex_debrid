@@ -1293,30 +1293,43 @@ async def _render_advanced_settings(app_state):
     db = app_state.db
 
     with ui.card().classes("w-full p-4"):
-        ui.label("UI Settings").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
+        ui.label("Logging").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
         ui.separator().classes("my-2")
 
-        debug = db.get_setting("Debug printing", "false")
+        current_level = db.get_setting("Log level", "info")
+        # Backwards compat: old bool → new level
+        if current_level not in ("info", "debug", "trace"):
+            current_level = "debug" if db.get_setting("Debug printing", "false") == "true" else "info"
         log_file = db.get_setting("Log to file", "false")
 
-        debug_toggle = ui.switch("Debug Logging", value=debug == "true").style(f"color: {COLORS['text']}")
-        log_toggle = ui.switch("Log to File", value=log_file == "true").style(f"color: {COLORS['text']}")
+        level_select = ui.select(
+            {"info": "Info  – normal output", "debug": "Debug  – app debug messages", "trace": "Trace  – everything (incl. urllib3, nicegui)"},
+            value=current_level,
+            label="Log Level",
+        ).classes("w-full").props("outlined dark color=amber")
 
-        async def save_ui_settings():
-            db.set_setting("Debug printing", "true" if debug_toggle.value else "false", "ui")
+        log_toggle = ui.switch("Log to File (pd_reloaded.log)", value=log_file == "true").style(f"color: {COLORS['text']}")
+        ui.label(
+            "When enabled a rotating log file is written to the config directory. "
+            "Max 5 MB per file, 3 backups kept."
+        ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
+
+        async def save_log_settings():
+            chosen = level_select.value
+            db.set_setting("Log level", chosen, "ui")
+            # Keep legacy key in sync
+            db.set_setting("Debug printing", "true" if chosen in ("debug", "trace") else "false", "ui")
             db.set_setting("Log to file", "true" if log_toggle.value else "false", "ui")
-            # Apply log level immediately
-            import logging as _logging
-            root = _logging.getLogger()
-            if debug_toggle.value:
-                root.setLevel(_logging.DEBUG)
-                _logging.getLogger("webapp").setLevel(_logging.DEBUG)
-            else:
-                root.setLevel(_logging.INFO)
-                _logging.getLogger("webapp").setLevel(_logging.INFO)
-            ui.notify("UI settings saved", type="positive")
+            # Hot-reload logging at runtime
+            from webapp.log_config import reconfigure
+            reconfigure(
+                log_level=chosen,
+                log_to_file=log_toggle.value,
+                config_dir=app_state.config_dir,
+            )
+            ui.notify("Logging settings saved & applied", type="positive")
 
-        ui.button("Save", on_click=save_ui_settings, icon="save").props("color=amber push").classes("mt-4")
+        ui.button("Save", on_click=save_log_settings, icon="save").props("color=amber push").classes("mt-4")
 
     # Database management
     with ui.card().classes("w-full p-4 mt-4"):

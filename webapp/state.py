@@ -96,14 +96,16 @@ class AppState:
         return items
 
     def add_log(self, message: str):
-        """Add a log message to the automation log buffer."""
-        import datetime
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        """Add a log message to the automation log buffer *and* emit via standard logging."""
+        # Emit through standard Python logging so it reaches console, file, and ring buffer
+        logging.getLogger("webapp.automation").info(message)
+        # Also keep in the legacy in-memory list (used by activity page if still referenced)
+        import datetime as _dt
+        timestamp = _dt.datetime.now().strftime("%H:%M:%S")
         entry = f"[{timestamp}] {message}"
         self.automation_logs.append(entry)
         if len(self.automation_logs) > self.max_log_lines:
             self.automation_logs = self.automation_logs[-self.max_log_lines:]
-        # Notify UI
         self._notify_updates("log", entry)
 
     def clear_logs(self):
