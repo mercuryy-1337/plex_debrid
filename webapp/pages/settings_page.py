@@ -990,14 +990,15 @@ async def _render_version_settings(app_state):
                     async def toggle_enabled(v=ver):
                         db.update_release_version(v["id"], enabled=not v["enabled"])
                         _save_versions_to_json()
+                        msg = f"{'Enabled' if not v['enabled'] else 'Disabled'} {v['name']}"
+                        ui.notify(msg, type="info")
                         _refresh_versions()
-                        ui.notify(f"{'Enabled' if not v['enabled'] else 'Disabled'} {v['name']}", type="info")
 
                     async def delete_ver(v=ver):
                         db.delete_release_version(v["id"])
                         _save_versions_to_json()
-                        _refresh_versions()
                         ui.notify(f"Deleted {v['name']}", type="warning")
+                        _refresh_versions()
 
                     async def edit_ver(v=ver):
                         _open_version_editor(v, is_new=False)
@@ -1091,7 +1092,7 @@ async def _render_version_settings(app_state):
 
                         # Update download folder when category changes
                         def _on_category_change(e):
-                            cat_val = e.value.strip() if e.value else "default"
+                            cat_val = str(e.args).strip() if e.args else "default"
                             if _global_dl_base:
                                 dl_folder_input.value = f"{_global_dl_base}/{cat_val}"
 

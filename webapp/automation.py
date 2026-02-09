@@ -121,9 +121,9 @@ def refresh_plex_library(app_state, media_type, moved_path):
 
         refresh_sections = getattr(plex_svc.library.refresh, 'sections', [])
         partial = getattr(plex_svc.library.refresh, 'partial', 'true')
-        delay = 2
+        delay = 10
         try:
-            delay = float(getattr(plex_svc.library.refresh, 'delay', '2'))
+            delay = float(getattr(plex_svc.library.refresh, 'delay', '10'))
         except (ValueError, TypeError):
             pass
 

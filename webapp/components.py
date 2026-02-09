@@ -343,7 +343,9 @@ def create_spa_shell(app_state, initial_page, on_navigate, client=None):
                 badge.text = str(count)
                 badge.set_visibility(count > 0)
 
-        ui.timer(2.0, _refresh_activity_badge)
+        _badge_timer = ui.timer(2.0, _refresh_activity_badge)
+        if client is not None:
+            client.on_disconnect(lambda: setattr(_badge_timer, 'active', False))
 
         # Spacer
         ui.element("div").classes("flex-1")

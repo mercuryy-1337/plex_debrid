@@ -8,7 +8,28 @@ only the content area is swapped when navigating between pages.
 import os
 import sys
 import logging
+from contextlib import nullcontext
 from nicegui import ui, app, Client
+
+# ── Patch NiceGUI Timer to gracefully handle deleted parent slots ───
+# NiceGUI's Timer._get_context() raises RuntimeError when the parent
+# element has been deleted (e.g. after SPA navigation or disconnect).
+# The error fires from NiceGUI internals *before* our callback runs,
+# so wrapping callbacks doesn't help.  Instead we patch _get_context
+# to silently deactivate the timer and return a no-op context.
+from nicegui.elements.timer import Timer as _NiceGuiTimer
+
+_original_get_context = _NiceGuiTimer._get_context
+
+def _safe_get_context(self):
+    try:
+        return _original_get_context(self)
+    except RuntimeError:
+        self.active = False
+        return nullcontext()
+
+_NiceGuiTimer._get_context = _safe_get_context
+# ────────────────────────────────────────────────────────────────────
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -107,8 +128,18 @@ def create_app(config_dir="."):
 
         from webapp.components import create_spa_shell
 
+        def _deactivate_child_timers(element):
+            """Recursively deactivate Timer elements to prevent 'parent slot deleted' errors."""
+            from nicegui.elements.timer import Timer as _Timer
+            for slot in element.slots.values():
+                for child in slot.children:
+                    if isinstance(child, _Timer):
+                        child.active = False
+                    _deactivate_child_timers(child)
+
         async def navigate(page_name: str):
             """Swap only the content area — sidebar stays put."""
+            _deactivate_child_timers(content_area)
             content_area.clear()
             # Support "results:query" for search navigation
             search_query = ""
