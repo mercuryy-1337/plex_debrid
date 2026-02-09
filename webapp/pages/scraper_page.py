@@ -716,6 +716,8 @@ async def _proceed_download(app_state, release, release_data, search_state,
             lambda: _execute_download(
                 app_state, release, stream, cinemeta_name,
                 media_type, version, imdb_id=imdb_id,
+                tmdb_id=search_state.get("tmdb_id", ""),
+                year=search_state.get("meta_year"),
                 activity_id=activity_id),
         )
 
@@ -798,7 +800,8 @@ async def _proceed_download(app_state, release, release_data, search_state,
 
 
 def _execute_download(app_state, release, stream, cinemeta_name,
-                       media_type, version, imdb_id="", activity_id=None):
+                       media_type, version, imdb_id="", tmdb_id="",
+                       year=None, activity_id=None):
     """Execute the download via Decypharr using global API key.
 
     Tracks the download lifecycle on app_state's activity queue:
@@ -896,12 +899,20 @@ def _execute_download(app_state, release, stream, cinemeta_name,
                         activity_id, status="processing", progress=1.0)
 
                     # ── Move content to media folder ──────────
-                    from webapp.automation import move_to_media_folder, refresh_plex_library
+                    from webapp.automation import move_to_media_folder, rename_media_folder, refresh_plex_library
                     moved_path = None
                     if completed_torrent:
                         moved_path = move_to_media_folder(
                             app_state, completed_torrent, category,
                             cinemeta_name, activity_id,
+                        )
+
+                    # ── Rename to standard naming scheme ──────
+                    if moved_path:
+                        moved_path = rename_media_folder(
+                            moved_path, cinemeta_name,
+                            year=year, media_type=media_type,
+                            tmdb_id=tmdb_id, imdb_id=imdb_id,
                         )
 
                     # ── Remove torrent from Decypharr (after move)

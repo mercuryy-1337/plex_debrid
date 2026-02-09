@@ -4,6 +4,7 @@ Bridges the legacy download automation with the new web UI.
 """
 
 import os
+import re
 import shutil
 import time
 import logging
@@ -82,6 +83,90 @@ def move_to_media_folder(app_state, torrent, category, title, activity_id=None):
         )
         logger.exception("Failed to move %s \u2192 %s", content_path, dest_path)
         return None
+
+
+def rename_media_folder(moved_path, title, year, media_type,
+                        tmdb_id=None, imdb_id=None):
+    """Rename moved media to a standard naming scheme.
+
+    Movies:  ``Title (Year) - {tmdb-ID}/Title (Year) - {tmdb-ID}.ext``
+    Shows/Anime: ``Title (Year) - {tmdb-ID}/``  (folder only, files untouched)
+
+    Falls back to ``{imdb-ID}`` when *tmdb_id* is not available.
+    Returns the (possibly updated) path so callers can pass it to the
+    Plex refresh queue.
+    """
+    if not moved_path or not os.path.exists(moved_path):
+        return moved_path
+
+    # ── Build the identifier tag ─────────────────────────────
+    if tmdb_id:
+        id_tag = f"{{tmdb-{tmdb_id}}}"
+    elif imdb_id:
+        id_tag = f"{{imdb-{imdb_id}}}"
+    else:
+        logger.warning("No tmdb/imdb ID — skipping rename for %s", moved_path)
+        return moved_path
+
+    # ── Clean title ──────────────────────────────────────────
+    name = title.strip()
+    # Strip a trailing year if it duplicates the explicit *year* value
+    if year:
+        name = re.sub(
+            rf'[\s._-]*\(?\s*{re.escape(str(year))}\s*\)?\s*$', '', name
+        ).strip()
+    # Strip trailing season/episode markers (e.g. "S01", "S01E03")
+    name = re.sub(r'[\s._-]*S\d{2,}(?:E\d{2,})?[\s._-]*$', '', name, flags=re.I).strip()
+    # Collapse dots / underscores → spaces, then title-case
+    name = re.sub(r'[._]+', ' ', name).strip()
+    name = name.title()
+
+    year_part = f" ({year})" if year else ""
+    base_name = f"{name}{year_part} - {id_tag}"
+
+    parent_dir = os.path.dirname(moved_path)
+    is_movie = media_type in ("movie", "anime_movie")
+
+    try:
+        if os.path.isdir(moved_path):
+            # ── Movies: rename every file inside ─────────────
+            if is_movie:
+                for fname in os.listdir(moved_path):
+                    fpath = os.path.join(moved_path, fname)
+                    if os.path.isfile(fpath) or os.path.islink(fpath):
+                        _, ext = os.path.splitext(fname)
+                        new_fpath = os.path.join(
+                            moved_path, f"{base_name}{ext}")
+                        if fpath != new_fpath:
+                            os.rename(fpath, new_fpath)
+
+            # ── Rename the folder (movies + shows/anime) ─────
+            new_folder = os.path.join(parent_dir, base_name)
+            if moved_path.rstrip('/') != new_folder.rstrip('/'):
+                os.rename(moved_path, new_folder)
+                logger.info("Renamed → %s", new_folder)
+                return new_folder
+            return moved_path
+
+        elif os.path.isfile(moved_path) or os.path.islink(moved_path):
+            # Single file — wrap in a properly-named folder
+            _, ext = os.path.splitext(moved_path)
+            new_folder = os.path.join(parent_dir, base_name)
+            os.makedirs(new_folder, exist_ok=True)
+            if is_movie:
+                new_file = os.path.join(new_folder, f"{base_name}{ext}")
+            else:
+                # Shows: keep original filename
+                new_file = os.path.join(
+                    new_folder, os.path.basename(moved_path))
+            shutil.move(moved_path, new_file)
+            logger.info("Renamed → %s", new_folder)
+            return new_folder
+
+    except Exception:
+        logger.exception("rename_media_folder failed for %s", moved_path)
+
+    return moved_path
 
 
 # ── Plex refresh queue (serialises scans so they don't conflict) ─────
@@ -714,6 +799,53 @@ class AutomationEngine:
                     moved_path = move_to_media_folder(
                         app_state, completed_torrent, category,
                         clean_title, activity_id,
+                    )
+
+                # ── Rename to standard naming scheme ─────────────
+                # Use show-level title / year / IDs regardless of whether
+                # the element is a season or episode.
+                if moved_path:
+                    rename_title = clean_title
+                    rename_year = getattr(element, 'year', None)
+                    rename_imdb = imdb_id
+                    rename_tmdb = tmdb_id
+
+                    if media_type in ('season', 'anime_show'):
+                        rename_title = getattr(
+                            element, 'parentTitle',
+                            getattr(element, 'title', clean_title)
+                        ).replace('.', ' ').strip()
+                        rename_year = getattr(
+                            element, 'parentYear',
+                            getattr(element, 'year', None))
+                        rename_imdb = None
+                        rename_tmdb = None
+                        for eid in getattr(element, 'parentEID', []):
+                            if 'imdb://' in eid:
+                                rename_imdb = eid.replace('imdb://', '')
+                            elif 'tmdb://' in eid:
+                                rename_tmdb = eid.replace('tmdb://', '')
+                    elif media_type == 'episode':
+                        rename_title = getattr(
+                            element, 'grandparentTitle',
+                            getattr(element, 'parentTitle', clean_title)
+                        ).replace('.', ' ').strip()
+                        rename_year = getattr(
+                            element, 'grandparentYear',
+                            getattr(element, 'parentYear', None))
+                        rename_imdb = None
+                        rename_tmdb = None
+                        for eid in getattr(element, 'grandparentEID', []):
+                            if 'imdb://' in eid:
+                                rename_imdb = eid.replace('imdb://', '')
+                            elif 'tmdb://' in eid:
+                                rename_tmdb = eid.replace('tmdb://', '')
+
+                    moved_path = rename_media_folder(
+                        moved_path, rename_title,
+                        year=rename_year,
+                        media_type=media_type,
+                        tmdb_id=rename_tmdb, imdb_id=rename_imdb,
                     )
 
                 # ── Remove torrent from Decypharr (after move) ───
