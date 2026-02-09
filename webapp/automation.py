@@ -84,8 +84,64 @@ def move_to_media_folder(app_state, torrent, category, title, activity_id=None):
         return None
 
 
+# ── Plex refresh queue (serialises scans so they don't conflict) ─────
+import queue as _queue
+import threading as _threading
+
+_refresh_q: _queue.Queue = _queue.Queue()
+_worker_started = False
+_worker_lock = _threading.Lock()
+
+
+def _ensure_plex_worker():
+    """Lazily start the single background worker thread."""
+    global _worker_started
+    with _worker_lock:
+        if _worker_started:
+            return
+        t = _threading.Thread(
+            target=_plex_refresh_worker, daemon=True,
+            name="plex-refresh-queue")
+        t.start()
+        _worker_started = True
+
+
+def _plex_refresh_worker():
+    """Process queued Plex scan requests one at a time."""
+    while True:
+        item = _refresh_q.get()
+        try:
+            _do_refresh_plex_library(
+                item["app_state"], item["media_type"], item["moved_path"])
+        except Exception as exc:
+            logger.debug("Plex refresh worker error: %s", exc)
+        finally:
+            _refresh_q.task_done()
+
+
 def refresh_plex_library(app_state, media_type, moved_path):
-    """Trigger a Plex partial library scan for *moved_path*.
+    """Enqueue a Plex library refresh (non-blocking, thread-safe).
+
+    Scans are executed sequentially by a single background thread so
+    that simultaneous requests for different libraries don't conflict.
+    """
+    _ensure_plex_worker()
+    _refresh_q.put({
+        "app_state": app_state,
+        "media_type": media_type,
+        "moved_path": moved_path,
+    })
+    depth = _refresh_q.qsize()
+    logger.info("Plex refresh queued: type=%s path=%s (queue depth ~%d)",
+                media_type, moved_path, depth)
+    app_state.add_log(
+        f"\U0001f4da Plex scan queued for {os.path.basename(moved_path)}"
+        + (f" ({depth} pending)" if depth > 1 else "")
+    )
+
+
+def _do_refresh_plex_library(app_state, media_type, moved_path):
+    """Actually trigger a Plex partial library scan for *moved_path*.
 
     *media_type* should be one of ``"movie"``, ``"show"``, ``"season"``,
     ``"anime_show"``, ``"anime_movie"`` etc.  It is mapped to the Plex
@@ -127,6 +183,8 @@ def refresh_plex_library(app_state, media_type, moved_path):
         except (ValueError, TypeError):
             pass
 
+        # Wait *before* scanning so the filesystem settles and we space
+        # out consecutive scans when the queue has multiple items.
         time.sleep(delay)
 
         scanned = False

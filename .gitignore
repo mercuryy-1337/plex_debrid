@@ -407,6 +407,7 @@ settings.json.old
 old_settings.json
 config/
 *.log
+*.pkl
 
 # Python
 __pycache__/
