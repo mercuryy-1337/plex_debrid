@@ -470,6 +470,9 @@ def _is_season_pack(title: str) -> bool:
     # Also detect "Season 2 - 06" / "Season.2.-.12" style individual episodes
     if not has_single_ep:
         has_single_ep = bool(regex.search(r'SEASON[\s.]*\d+[\s.]*-[\s.]*\d+', t))
+    # Anime style: "S2.-.23" / "S2 - 14" (season-dash-episode, no tilde range after)
+    if not has_single_ep:
+        has_single_ep = bool(regex.search(r'S\d{1,2}[\s.]*-[\s.]*\d{1,3}(?![\s.]*~)', t))
     # Episode ranges like S02E01-12 or S02E01-E12
     if regex.search(r'S\d{1,2}[\s.]?E\d{1,3}\s?-\s?E?\d{1,3}', t):
         return True
@@ -478,6 +481,11 @@ def _is_season_pack(title: str) -> bool:
         return True
     # Explicit markers — but only if there's no individual episode pattern
     if not has_single_ep and regex.search(r'(?:SEASON|COMPLETE|FULL\.SEASON)', t):
+        return True
+    # Anime batch markers: [BATCH] tag or episode range like "01 ~ 24" / "01.~.24"
+    if regex.search(r'\[BATCH\]', t):
+        return True
+    if regex.search(r'\d{1,3}[\s.]*~[\s.]*\d{1,3}', t):
         return True
     return False
 
