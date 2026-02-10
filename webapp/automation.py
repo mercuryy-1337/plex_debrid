@@ -17,14 +17,27 @@ logger = logging.getLogger(__name__)
 # ─── Shared post-download helpers (used by automation + scraper page) ─────
 
 def get_category_media_folders(db):
-    """Build a category → media_folder mapping from release versions."""
-    versions_data = db.get_release_versions(enabled_only=True) if db else []
+    """Build a category → media_folder mapping from release versions.
+
+    The media folder for each category is derived from the global
+    "Global Media Folder" base setting + the category name, mirroring
+    how download folders are derived.
+    """
+    if not db:
+        return {}
+    global_media_base = (db.get_setting("Global Media Folder", "") or "").rstrip("/")
+    versions_data = db.get_release_versions(enabled_only=True)
     mapping = {}
     for v in versions_data:
         cat = v.get("category", "default")
-        mf = v.get("media_folder", "")
-        if mf and cat not in mapping:
-            mapping[cat] = mf
+        if cat not in mapping:
+            # Prefer global base + category; fall back to per-version value
+            if global_media_base:
+                mapping[cat] = f"{global_media_base}/{cat}"
+            else:
+                mf = v.get("media_folder", "")
+                if mf:
+                    mapping[cat] = mf
     return mapping
 
 

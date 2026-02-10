@@ -528,7 +528,9 @@ def render_debrid(wizard, app_state):
             "(e.g. /mnt/symlinks/default)."
         ).classes("text-xs mt-1").style(f"color: {COLORS['text_muted']}")
         ui.label(
-            "Media folder: the app will move completed content here. (this will be for your first Release version)"
+            "Media base folder: the app will move completed content here. "
+            "Each release version automatically gets a sub-folder named after its category "
+            "(e.g. /mnt/media/default)."
         ).classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
         ui.input(
@@ -539,9 +541,9 @@ def render_debrid(wizard, app_state):
         ).classes("w-full mt-2").props("outlined dark color=amber")
 
         ui.input(
-            "Media Folder",
+            "Media Base Folder",
             value=wizard.get("media_folder", ""),
-            placeholder="/mnt/media/shows",
+            placeholder="/mnt/media",
             on_change=lambda e: wizard.update({"media_folder": e.value}),
         ).classes("w-full mt-2").props("outlined dark color=amber")
 
@@ -747,6 +749,11 @@ async def save_and_finish(wizard, app_state):
     if global_download_base:
         db.set_setting("Global Download Folder", global_download_base, "debrid")
 
+    # Save global media base folder
+    global_media_base = wizard.get("media_folder", "").strip().rstrip("/")
+    if global_media_base:
+        db.set_setting("Global Media Folder", global_media_base, "debrid")
+
     # Save scraper sources
     for src in wizard.get("scraper_sources", ["torrentio"]):
         cfg = {}
@@ -773,10 +780,13 @@ async def save_and_finish(wizard, app_state):
         ["seeders", "preference", "highest", ""],
         ["size", "requirement", ">=", "0.1"],
     ]
-    # Auto-derive download_folder from global base + category
+    # Auto-derive download_folder and media_folder from global base + category
     default_category = "default"
     derived_download_folder = (
         f"{global_download_base}/{default_category}" if global_download_base else ""
+    )
+    derived_media_folder = (
+        f"{global_media_base}/{default_category}" if global_media_base else ""
     )
     db.add_release_version(
         name="1080p SDR",
@@ -787,7 +797,7 @@ async def save_and_finish(wizard, app_state):
         sort_order=0,
         category=default_category,
         download_folder=derived_download_folder,
-        media_folder=wizard.get("media_folder", "").strip(),
+        media_folder=derived_media_folder,
     )
 
     # Mark setup complete

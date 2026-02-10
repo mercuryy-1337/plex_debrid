@@ -585,6 +585,53 @@ async def _render_debrid_settings(app_state):
 
         ui.button("Save", on_click=save_global_download_folder, icon="save").props("color=amber push dense").classes("mt-2")
 
+    # Global Media Folder
+    with ui.card().classes("w-full p-4 mt-4"):
+        ui.label("Global Media Folder").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
+        ui.label(
+            "Base path where completed content is moved to. Each release version automatically "
+            "gets a sub-folder named after its category (e.g. /mnt/media/default). "
+            "Changing this will update the media folder for all existing versions."
+        ).classes("text-sm").style(f"color: {COLORS['text_muted']}")
+        ui.separator().classes("my-2")
+
+        global_mf = db.get_setting("Global Media Folder", "")
+        global_mf_input = ui.input(
+            "Media Base Folder", value=global_mf,
+            placeholder="/mnt/media"
+        ).classes("w-full").props("outlined dark color=amber")
+
+        # Show current derived paths
+        mf_derived_label_container = ui.column().classes("w-full gap-1 mt-2")
+
+        def _show_derived_media_paths(base_path):
+            mf_derived_label_container.clear()
+            base = base_path.strip().rstrip("/")
+            if not base:
+                return
+            versions = db.get_release_versions()
+            with mf_derived_label_container:
+                for v in versions:
+                    cat = v.get("category", "default")
+                    ui.label(f"{v['name']}: {base}/{cat}").classes("text-xs font-mono").style(
+                        f"color: {COLORS['text_muted']}")
+
+        _show_derived_media_paths(global_mf)
+
+        async def save_global_media_folder():
+            new_base = global_mf_input.value.strip().rstrip("/")
+            db.set_setting("Global Media Folder", new_base, "debrid")
+            # Update all existing versions' media_folder
+            if new_base:
+                versions = db.get_release_versions()
+                for v in versions:
+                    cat = v.get("category", "default")
+                    db.update_release_version(v["id"], media_folder=f"{new_base}/{cat}")
+            _show_derived_media_paths(new_base)
+            ui.notify("Global media folder saved and all versions updated", type="positive")
+
+        ui.button("Save", on_click=save_global_media_folder, icon="save").props("color=amber push dense").classes("mt-2")
+
     # Decypharr info card
     with ui.card().classes("w-full p-4 mt-4"):
         ui.label("Decypharr Status").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
@@ -811,12 +858,14 @@ async def _render_version_settings(app_state):
                             dup_cat = f"{src.get('category', 'default')}_copy"
                             _gl_base = db.get_setting("Global Download Folder", "").rstrip("/")
                             dup_dl = f"{_gl_base}/{dup_cat}" if _gl_base else src.get("download_folder", "")
+                            _gl_mf_base = db.get_setting("Global Media Folder", "").rstrip("/")
+                            dup_mf = f"{_gl_mf_base}/{dup_cat}" if _gl_mf_base else src.get("media_folder", "")
                             dup = {
                                 "name": f"{src['name']} (copy)",
                                 "language": src.get("language", "en"),
                                 "category": dup_cat,
                                 "download_folder": dup_dl,
-                                "media_folder": src.get("media_folder", ""),
+                                "media_folder": dup_mf,
                                 "triggers": [list(t) for t in src.get("triggers", [])],
                                 "rules": [list(r) for r in src.get("rules", [])],
                             }
@@ -1068,15 +1117,16 @@ async def _render_version_settings(app_state):
                     with ui.card().classes("w-full p-3").style(f"background: {COLORS['surface_light']}"):
                         ui.label("Folder Paths").classes("text-sm font-bold mb-2").style(f"color: {COLORS['primary']}")
                         ui.label(
-                            "Download folder is auto-derived from the global download base folder + category name. "
-                            "Change the category above to update it. "
-                            "Media folder: where the app moves completed content."
+                            "Both folders are auto-derived from the global base folders + category name. "
+                            "Change the category above to update them."
                         ).classes("text-xs mb-2").style(f"color: {COLORS['text_muted']}")
 
-                        # Auto-derive download folder from global base + category
+                        # Auto-derive download folder and media folder from global base + category
                         _global_dl_base = db.get_setting("Global Download Folder", "").rstrip("/")
+                        _global_mf_base = db.get_setting("Global Media Folder", "").rstrip("/")
                         _cat = edit_state.get("category", "default") or "default"
                         _derived_dl = f"{_global_dl_base}/{_cat}" if _global_dl_base else edit_state.get("download_folder", "")
+                        _derived_mf = f"{_global_mf_base}/{_cat}" if _global_mf_base else edit_state.get("media_folder", "")
 
                         with ui.row().classes("w-full gap-3"):
                             dl_folder_input = ui.input(
@@ -1085,16 +1135,18 @@ async def _render_version_settings(app_state):
                                 placeholder="Set global download folder in Decypharr tab"
                             ).classes("flex-1").props("outlined dense dark color=amber readonly")
                             media_folder_input = ui.input(
-                                "Media Folder",
-                                value=edit_state.get("media_folder", ""),
-                                placeholder="/mnt/media/shows"
-                            ).classes("flex-1").props("outlined dense dark color=amber")
+                                "Media Folder (auto-derived)",
+                                value=_derived_mf,
+                                placeholder="Set global media folder in Decypharr tab"
+                            ).classes("flex-1").props("outlined dense dark color=amber readonly")
 
-                        # Update download folder when category changes
+                        # Update download & media folder when category changes
                         def _on_category_change(e):
                             cat_val = str(e.args).strip() if e.args else "default"
                             if _global_dl_base:
                                 dl_folder_input.value = f"{_global_dl_base}/{cat_val}"
+                            if _global_mf_base:
+                                media_folder_input.value = f"{_global_mf_base}/{cat_val}"
 
                         category_input.on("update:model-value", _on_category_change)
 
@@ -1256,16 +1308,18 @@ async def _render_version_settings(app_state):
                     if not category_input.value.strip():
                         ui.notify("Category is required (used for Decypharr routing)", type="negative")
                         return
-                    # Auto-derive download folder from global base + category
+                    # Auto-derive download folder and media folder from global base + category
                     cat_val = category_input.value.strip()
-                    global_base = db.get_setting("Global Download Folder", "").rstrip("/")
-                    derived_dl = f"{global_base}/{cat_val}" if global_base and cat_val else dl_folder_input.value.strip()
+                    global_dl_base = db.get_setting("Global Download Folder", "").rstrip("/")
+                    global_mf_base = db.get_setting("Global Media Folder", "").rstrip("/")
+                    derived_dl = f"{global_dl_base}/{cat_val}" if global_dl_base and cat_val else dl_folder_input.value.strip()
+                    derived_mf = f"{global_mf_base}/{cat_val}" if global_mf_base and cat_val else media_folder_input.value.strip()
                     data = {
                         "name": name_input.value.strip(),
                         "language": lang_input.value.strip() or "en",
                         "category": cat_val,
                         "download_folder": derived_dl,
-                        "media_folder": media_folder_input.value.strip(),
+                        "media_folder": derived_mf,
                         "triggers": edit_state["triggers"],
                         "rules": edit_state["rules"],
                     }
