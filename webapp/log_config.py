@@ -51,8 +51,28 @@ NOISY_LOGGERS = [
 ]
 
 # ── Unified format ──────────────────────────────────────────────────
-LOG_FORMAT = "[%(asctime)s] [%(levelname)-5s] %(name)s: %(message)s"
 LOG_DATEFMT = "%d/%m/%y %H:%M:%S"
+
+
+def _is_trace_only_logger(logger_name: str) -> bool:
+    return any(
+        logger_name == noisy or logger_name.startswith(f"{noisy}.")
+        for noisy in NOISY_LOGGERS
+    )
+
+
+class _DisplayLevelFilter(logging.Filter):
+    """Expose a display level that marks trace-only DEBUG lines as TRACE."""
+
+    def filter(self, record):
+        level_name = record.levelname
+        if record.levelno == logging.DEBUG and _is_trace_only_logger(record.name):
+            level_name = "TRACE"
+        record.pd_levelname = level_name
+        return True
+
+
+LOG_FORMAT = "[%(asctime)s] [%(pd_levelname)-5s] %(name)s: %(message)s"
 
 # ── In-memory ring buffer (used by /debug/logs page) ───────────────
 _MAX_BUFFER = 2000
@@ -82,6 +102,7 @@ def get_log_lines(last_n: int = 500) -> list[str]:
 # ── State ───────────────────────────────────────────────────────────
 _file_handler: logging.Handler | None = None
 _buffer_handler: _BufferHandler | None = None
+_display_level_filter = _DisplayLevelFilter()
 
 
 def setup_logging(log_level: str = "info",
@@ -107,14 +128,19 @@ def setup_logging(log_level: str = "info",
 
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(formatter)
+    if _display_level_filter not in console.filters:
+        console.addFilter(_display_level_filter)
     root.addHandler(console)
 
     # ── Buffer handler (in-memory ring) — create once ───────────────
     if _buffer_handler is None:
         _buffer_handler = _BufferHandler()
         _buffer_handler.setFormatter(formatter)
+        _buffer_handler.addFilter(_display_level_filter)
     else:
         _buffer_handler.setFormatter(formatter)
+        if _display_level_filter not in _buffer_handler.filters:
+            _buffer_handler.addFilter(_display_level_filter)
     if _buffer_handler not in root.handlers:
         root.addHandler(_buffer_handler)
 
@@ -129,10 +155,13 @@ def setup_logging(log_level: str = "info",
                 log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8",
             )
             _file_handler.setFormatter(formatter)
+            _file_handler.addFilter(_display_level_filter)
             root.addHandler(_file_handler)
         else:
             # Already exists; just make sure format is current
             _file_handler.setFormatter(formatter)
+            if _display_level_filter not in _file_handler.filters:
+                _file_handler.addFilter(_display_level_filter)
             if _file_handler not in root.handlers:
                 root.addHandler(_file_handler)
     else:

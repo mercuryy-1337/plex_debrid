@@ -414,9 +414,18 @@ def content_card(item):
     }
     s_color = status_colors.get(status, COLORS["text_muted"])
 
-    with ui.card().classes("content-card").style(
+    card = ui.card().classes("content-card").style(
         "width: 185px; overflow: hidden; padding: 0; border-radius: 8px;"
-    ):
+    )
+    imdb_id = item.get("imdb_id")
+    if media_type in ("show", "anime_show") and imdb_id:
+        card.style("cursor: pointer;")
+        card.on("click", lambda _, iid=imdb_id: ui.navigate.to(f"/series/{iid}"))
+    elif media_type in ("movie", "anime_movie") and imdb_id:
+        card.style("cursor: pointer;")
+        card.on("click", lambda _, iid=imdb_id: ui.navigate.to(f"/movies/{iid}"))
+
+    with card:
         # Poster
         poster = item.get("poster_url")
         if poster:

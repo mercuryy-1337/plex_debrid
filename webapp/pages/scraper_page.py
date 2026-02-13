@@ -398,7 +398,7 @@ async def _open_scrape_dialog(app_state, client, *, imdb_id, title, media_type,
 # Scraping helpers
 # ═══════════════════════════════════════════════════════════════════
 
-def _run_scrape(app_state, query, search_state):
+def _run_scrape(app_state, query, search_state, scrape_altquery=None):
     """Run the scraping process in a background thread."""
     try:
         from webapp.automation import get_automation_engine
@@ -410,7 +410,10 @@ def _run_scrape(app_state, query, search_state):
 
         media_type = search_state.get("media_type", "auto")
 
-        scraped_releases = scraper.scrape(query)
+        if scrape_altquery:
+            scraped_releases = scraper.scrape(query, scrape_altquery)
+        else:
+            scraped_releases = scraper.scrape(query)
         if not scraped_releases:
             return []
 

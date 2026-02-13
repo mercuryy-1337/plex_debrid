@@ -52,7 +52,7 @@ def _get_page_modules():
     if not _PAGE_MODULES:
         from webapp.pages import (
             dashboard, content_page, activity_page,
-            scraper_page, settings_page, logs_page,
+            scraper_page, settings_page, logs_page, series_page, movies_page,
         )
         _PAGE_MODULES.update({
             "dashboard": dashboard,
@@ -62,6 +62,8 @@ def _get_page_modules():
             "scraper": scraper_page,
             "settings": settings_page,
             "logs": logs_page,
+            "series": series_page,
+            "movies": movies_page,
         })
     return _PAGE_MODULES
 
@@ -184,9 +186,22 @@ def create_app(config_dir="."):
             return ui.navigate.to("/onboarding")
 
         page = _path.strip("/") or "dashboard"
+        series_imdb = ""
+        movie_imdb = ""
+        shell_page = page
+        if page.startswith("series/"):
+            series_imdb = page.split("/", 1)[1]
+            shell_page = "content"
+            page = "series"
+        elif page.startswith("movies/"):
+            movie_imdb = page.split("/", 1)[1]
+            shell_page = "content"
+            page = "movies"
+
         pages = _get_page_modules()
         if page not in pages:
             page = "dashboard"
+            shell_page = "dashboard"
 
         from webapp.components import create_spa_shell
 
@@ -205,24 +220,40 @@ def create_app(config_dir="."):
             content_area.clear()
             # Support "results:query" for search navigation
             search_query = ""
+            series_target = ""
+            movie_target = ""
             if page_name.startswith("results:"):
                 search_query = page_name.split(":", 1)[1]
                 page_name = "results"
+            elif page_name.startswith("series/"):
+                series_target = page_name.split("/", 1)[1]
+                page_name = "series"
+            elif page_name.startswith("movies/"):
+                movie_target = page_name.split("/", 1)[1]
+                page_name = "movies"
             mod = pages.get(page_name)
             if mod:
                 with content_area:
                     if page_name == "results" and search_query:
                         await mod.render(app_state, client, search_query=search_query)
+                    elif page_name == "series" and series_target:
+                        await mod.render(app_state, client, imdb_id=series_target)
+                    elif page_name == "movies" and movie_target:
+                        await mod.render(app_state, client, imdb_id=movie_target)
                     else:
                         await mod.render(app_state, client)
             url_path = page_name
             if page_name == "results" and search_query:
                 from urllib.parse import quote
                 url_path = f"results?q={quote(search_query)}"
+            elif page_name == "series" and series_target:
+                url_path = f"series/{series_target}"
+            elif page_name == "movies" and movie_target:
+                url_path = f"movies/{movie_target}"
             ui.run_javascript(
                 f"window.history.pushState(null, '', '/{url_path}')")
 
-        content_area = create_spa_shell(app_state, page, navigate, client)
+        content_area = create_spa_shell(app_state, shell_page, navigate, client)
 
         # Render initial page
         with content_area:
@@ -231,6 +262,10 @@ def create_app(config_dir="."):
                 from starlette.requests import Request as _Req
                 raw_q = client.request.query_params.get("q", "") if hasattr(client, "request") else ""
                 await pages[page].render(app_state, client, search_query=raw_q)
+            elif page == "series":
+                await pages[page].render(app_state, client, imdb_id=series_imdb)
+            elif page == "movies":
+                await pages[page].render(app_state, client, imdb_id=movie_imdb)
             else:
                 await pages[page].render(app_state, client)
 
