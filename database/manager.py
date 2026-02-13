@@ -7,6 +7,8 @@ import os
 import json
 import datetime
 import logging
+import threading
+import re
 from contextlib import contextmanager
 
 from database.models import (
@@ -21,6 +23,7 @@ class DatabaseManager:
     def __init__(self, config_dir="."):
         self.config_dir = config_dir
         self._initialized = False
+        self._content_upsert_lock = threading.Lock()
 
     def initialize(self, config_dir=None):
         if config_dir:
@@ -163,21 +166,151 @@ class DatabaseManager:
                 return True, item.title
             return False, None
 
-    def upsert_content_item(self, imdb_id=None, tmdb_id=None, **kwargs):
-        """Insert or update a content item by IMDB or TMDB ID."""
+    def clear_all_content(self):
+        """Delete all content items, download logs, and ignored items."""
         with self.session_scope() as session:
-            item = None
-            if imdb_id:
-                item = session.query(ContentItem).filter_by(imdb_id=imdb_id).first()
-            elif tmdb_id:
-                item = session.query(ContentItem).filter_by(tmdb_id=tmdb_id).first()
-            if "genres" in kwargs and isinstance(kwargs["genres"], list):
-                kwargs["genres"] = json.dumps(kwargs["genres"])
-            if item:
-                for k, v in kwargs.items():
-                    setattr(item, k, v)
-                return item.id
-            else:
+            content_count = session.query(ContentItem).delete()
+            log_count = session.query(DownloadLog).delete()
+            ignored_count = session.query(IgnoredItem).delete()
+            return {"content": content_count, "logs": log_count, "ignored": ignored_count}
+
+    def deduplicate_content_items(self):
+        """Merge and remove duplicate content rows.
+
+        Returns number of removed duplicate rows.
+        """
+        status_score = {
+            "collected": 4,
+            "downloading": 3,
+            "ignored": 2,
+            "watchlisted": 1,
+        }
+
+        def _bucket(media_type):
+            if media_type in ("show", "anime_show", "season", "episode"):
+                return "show"
+            return "movie"
+
+        def _norm(text):
+            return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+        with self.session_scope() as session:
+            items = session.query(ContentItem).all()
+            groups = {}
+            for item in items:
+                if item.imdb_id:
+                    key = ("imdb", item.imdb_id)
+                elif item.tmdb_id:
+                    key = ("tmdb", item.tmdb_id)
+                else:
+                    key = (
+                        "fallback",
+                        _bucket(item.media_type),
+                        _norm(item.title),
+                        item.year,
+                    )
+                groups.setdefault(key, []).append(item)
+
+            removed = 0
+            for group_items in groups.values():
+                if len(group_items) <= 1:
+                    continue
+
+                winner = max(
+                    group_items,
+                    key=lambda item: (
+                        status_score.get(item.status, 0),
+                        item.updated_at or datetime.datetime.min,
+                        item.id,
+                    ),
+                )
+
+                for item in group_items:
+                    if item.id == winner.id:
+                        continue
+
+                    if not winner.imdb_id and item.imdb_id:
+                        winner.imdb_id = item.imdb_id
+                    if not winner.tmdb_id and item.tmdb_id:
+                        winner.tmdb_id = item.tmdb_id
+                    if not winner.poster_url and item.poster_url:
+                        winner.poster_url = item.poster_url
+                    if not winner.backdrop_url and item.backdrop_url:
+                        winner.backdrop_url = item.backdrop_url
+                    if (not winner.genres or winner.genres == "[]") and item.genres:
+                        winner.genres = item.genres
+
+                    session.query(DownloadLog).filter_by(content_item_id=item.id).update(
+                        {"content_item_id": winner.id}
+                    )
+                    session.delete(item)
+                    removed += 1
+
+            return removed
+
+    def upsert_content_item(self, imdb_id=None, tmdb_id=None, **kwargs):
+        """Insert/update a content item with dedup + status stability.
+
+        Matching priority:
+        1) imdb_id
+        2) tmdb_id
+        3) normalized title + year + media bucket (movie/show)
+        """
+        with self._content_upsert_lock:
+            with self.session_scope() as session:
+                if "genres" in kwargs and isinstance(kwargs["genres"], list):
+                    kwargs["genres"] = json.dumps(kwargs["genres"])
+
+                incoming_title = (kwargs.get("title") or "").strip()
+                incoming_year = kwargs.get("year")
+                incoming_type = kwargs.get("media_type")
+                incoming_status = kwargs.get("status")
+
+                def _bucket(media_type):
+                    if media_type in ("show", "anime_show", "season", "episode"):
+                        return "show"
+                    return "movie"
+
+                def _norm(title):
+                    return " ".join((title or "").strip().lower().split())
+
+                item = None
+                if imdb_id:
+                    item = session.query(ContentItem).filter_by(imdb_id=imdb_id).first()
+                if item is None and tmdb_id:
+                    item = session.query(ContentItem).filter_by(tmdb_id=tmdb_id).first()
+
+                if item is None and incoming_title:
+                    candidates = session.query(ContentItem).filter_by(
+                        title=incoming_title,
+                        year=incoming_year,
+                    ).all()
+                    if not candidates:
+                        candidates = session.query(ContentItem).filter_by(year=incoming_year).all()
+                    target_bucket = _bucket(incoming_type)
+                    target_norm = _norm(incoming_title)
+                    for candidate in candidates:
+                        if _norm(candidate.title) != target_norm:
+                            continue
+                        if _bucket(candidate.media_type) == target_bucket:
+                            item = candidate
+                            break
+
+                if item:
+                    if incoming_status == "watchlisted" and item.status in ("downloading", "collected", "ignored"):
+                        kwargs.pop("status", None)
+
+                    for k, v in kwargs.items():
+                        if v is None and getattr(item, k, None) is not None:
+                            continue
+                        setattr(item, k, v)
+
+                    if imdb_id and not item.imdb_id:
+                        item.imdb_id = imdb_id
+                    if tmdb_id and not item.tmdb_id:
+                        item.tmdb_id = tmdb_id
+                    return item.id
+
                 if imdb_id:
                     kwargs["imdb_id"] = imdb_id
                 if tmdb_id:

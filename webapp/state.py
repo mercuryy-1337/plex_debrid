@@ -29,6 +29,7 @@ class AppState:
         # Automation state
         self.automation_running = False
         self.automation_thread: Optional[Thread] = None
+        self.automation_engine = None
         self.automation_stop = False
         self.automation_logs: List[str] = []
         self.max_log_lines = 500

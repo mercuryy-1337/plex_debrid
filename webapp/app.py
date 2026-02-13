@@ -71,6 +71,12 @@ def create_app(config_dir="."):
     app_state.config_dir = config_dir
     app_state.db = DatabaseManager(config_dir)
     app_state.db.initialize(config_dir)
+    try:
+        removed = app_state.db.deduplicate_content_items()
+        if removed:
+            logger.info("Cleaned up %d duplicate content rows on startup", removed)
+    except Exception as e:
+        logger.debug("Startup content dedup cleanup failed: %s", e)
 
     # Check if we need onboarding
     needs_onboarding = not app_state.db.is_setup_complete()

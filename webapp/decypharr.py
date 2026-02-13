@@ -152,7 +152,7 @@ class DecypharrClient:
             resp = requests.get(
                 f"{self.base_url}/api/v2/torrents/info",
                 params=params,
-                timeout=self.timeout
+                timeout=None,
             )
             if resp.ok:
                 return resp.json() if resp.text else []
@@ -275,7 +275,7 @@ class DecypharrClient:
         return self.download_magnet(magnet, category=category)
 
     def wait_for_completion(self, torrent_hash: str,
-                            timeout: int = 300,
+                            timeout: Optional[int] = None,
                             poll_interval: int = 5,
                             remove_on_complete: bool = True,
                             progress_callback=None) -> dict:
@@ -292,7 +292,7 @@ class DecypharrClient:
         start = time.time()
         last_state = "unknown"
 
-        while time.time() - start < timeout:
+        while timeout is None or (time.time() - start < timeout):
             torrents = self.get_torrents(torrent_hash=torrent_hash)
             if not torrents:
                 time.sleep(poll_interval)
@@ -324,8 +324,8 @@ class DecypharrClient:
 
             time.sleep(poll_interval)
 
-        logger.warning("Torrent timed out after %ds: %s (last state: %s)",
-                        timeout, torrent_hash[:16], last_state)
+        logger.warning("Torrent timed out after %ss: %s (last state: %s)",
+                str(timeout), torrent_hash[:16], last_state)
         return {"success": False, "state": f"timeout ({last_state})",
                 "torrent": None}
 

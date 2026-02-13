@@ -397,7 +397,7 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 
-# pd_reloaded - sensitive / runtime data
+# pd_reloaded - sensitive / runtime data / venv
 *.db
 *.db-journal
 *.db-wal
@@ -408,6 +408,7 @@ old_settings.json
 config/
 *.log
 *.pkl
+pd/
 
 # Python
 __pycache__/

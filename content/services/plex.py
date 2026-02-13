@@ -275,7 +275,12 @@ class show(classes.media):
             url = PLEX_DISCOVER + '/library/metadata/' + ratingKey + '?includeUserState=1&X-Plex-Token=' + token
             response = get(url)
             if not response == None:
+                # Preserve the discovery-API guid so that update()'s
+                # equality check still works after loading full metadata.
+                _orig_guid = getattr(self, 'guid', None)
                 self.__dict__.update(response.MediaContainer.Metadata[0].__dict__)
+                if _orig_guid is not None:
+                    self.guid = _orig_guid
                 self._loaded = True
                 self.EID = setEID(self)
                 self.Seasons = []

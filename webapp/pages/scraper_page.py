@@ -14,6 +14,7 @@ from threading import Thread
 from nicegui import ui, Client
 
 from webapp.components import page_header, empty_state
+from webapp.parse import TorrentParser
 from webapp.theme import COLORS
 
 logger = logging.getLogger(__name__)
@@ -400,8 +401,8 @@ async def _open_scrape_dialog(app_state, client, *, imdb_id, title, media_type,
 def _run_scrape(app_state, query, search_state):
     """Run the scraping process in a background thread."""
     try:
-        from webapp.automation import AutomationEngine
-        engine = AutomationEngine(app_state)
+        from webapp.automation import get_automation_engine
+        engine = get_automation_engine(app_state)
         engine._load_settings_into_modules()
 
         import scraper
@@ -463,33 +464,6 @@ def _run_scrape(app_state, query, search_state):
         return []
 
 
-def _is_season_pack(title: str) -> bool:
-    """Detect if a release title looks like a season pack (not a single episode)."""
-    t = title.upper()
-    has_single_ep = bool(regex.search(r'S\d{1,2}[\s.]?E\d{1,3}(?!\s?-\s?E?\d)', t))
-    # Also detect "Season 2 - 06" / "Season.2.-.12" style individual episodes
-    if not has_single_ep:
-        has_single_ep = bool(regex.search(r'SEASON[\s.]*\d+[\s.]*-[\s.]*\d+', t))
-    # Anime style: "S2.-.23" / "S2 - 14" (season-dash-episode, no tilde range after)
-    if not has_single_ep:
-        has_single_ep = bool(regex.search(r'S\d{1,2}[\s.]*-[\s.]*\d{1,3}(?![\s.]*~)', t))
-    # Episode ranges like S02E01-12 or S02E01-E12
-    if regex.search(r'S\d{1,2}[\s.]?E\d{1,3}\s?-\s?E?\d{1,3}', t):
-        return True
-    # Has S01 but no episode number → season pack
-    if regex.search(r'S\d{1,2}(?![\s.]?E\d)', t) and not has_single_ep:
-        return True
-    # Explicit markers — but only if there's no individual episode pattern
-    if not has_single_ep and regex.search(r'(?:SEASON|COMPLETE|FULL\.SEASON)', t):
-        return True
-    # Anime batch markers: [BATCH] tag or episode range like "01 ~ 24" / "01.~.24"
-    if regex.search(r'\[BATCH\]', t):
-        return True
-    if regex.search(r'\d{1,3}[\s.]*~[\s.]*\d{1,3}', t):
-        return True
-    return False
-
-
 def _render_scrape_results(app_state, results, search_state, container):
     """Render scrape results as a list with download buttons."""
     with container:
@@ -511,7 +485,7 @@ def _render_scrape_results(app_state, results, search_state, container):
             for release in results:
                 media_type = search_state.get("media_type", "auto")
                 is_pack = (media_type != "movie"
-                           and _is_season_pack(release["title"]))
+                           and TorrentParser.is_season_pack(release["title"]))
                 border_color = "#3B82F6" if is_pack else COLORS['primary']
                 with ui.card().classes("w-full p-3").style(
                     f"background: {COLORS['surface_light']}; "
@@ -710,6 +684,17 @@ async def _proceed_download(app_state, release, release_data, search_state,
         cinemeta_name = search_state.get("cinemeta_name") or query or release.title
         imdb_id = search_state.get("imdb_id") or ""
 
+        # Debug: log season/episode info for shows / anime
+        if detected_type in ("show", "anime_show"):
+            is_anime = detected_type == "anime_show"
+            release.title = release.title.replace(".", " ")
+            se = TorrentParser.extract_season_episode(release.title, is_anime=is_anime)
+            pack_type = TorrentParser.classify_pack(release.title)
+            logger.debug(
+                "Manual scrape season info for '%s': detected=%s  parsed=%s  pack=%s  release='%s'",
+                cinemeta_name, detected_type, se or "N/A", pack_type.name, release.title[:80],
+            )
+
         # ── Create activity immediately so it appears on the dashboard ──
         activity_id = app_state.add_activity(
             title=cinemeta_name,
@@ -896,7 +881,7 @@ def _execute_download(app_state, release, stream, cinemeta_name,
 
             try:
                 poll_result = client.wait_for_completion(
-                    info_hash, timeout=300, poll_interval=5,
+                    info_hash, timeout=None, poll_interval=5,
                     remove_on_complete=False,
                     progress_callback=_on_progress,
                 )

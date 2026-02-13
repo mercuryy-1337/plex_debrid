@@ -153,28 +153,58 @@ def rename_media_folder(moved_path, title, year, media_type,
                         if fpath != new_fpath:
                             os.rename(fpath, new_fpath)
 
-            # ── Rename the folder (movies + shows/anime) ─────
+            # ── Check for an existing folder with the same ID tag ──
             new_folder = os.path.join(parent_dir, base_name)
             if moved_path.rstrip('/') != new_folder.rstrip('/'):
-                os.rename(moved_path, new_folder)
-                logger.info("Renamed → %s", new_folder)
-                return new_folder
+                existing = None
+                for entry in os.listdir(parent_dir):
+                    candidate = os.path.join(parent_dir, entry)
+                    if (os.path.isdir(candidate)
+                            and id_tag in entry
+                            and candidate.rstrip('/') != moved_path.rstrip('/')):
+                        existing = candidate
+                        break
+
+                if existing:
+                    # Merge files into the existing folder
+                    for fname in os.listdir(moved_path):
+                        src = os.path.join(moved_path, fname)
+                        dst = os.path.join(existing, fname)
+                        shutil.move(src, dst)
+                    # Remove the now-empty source folder
+                    try:
+                        os.rmdir(moved_path)
+                    except OSError:
+                        shutil.rmtree(moved_path, ignore_errors=True)
+                    logger.info("Merged into existing → %s", existing)
+                    return existing
+                else:
+                    os.rename(moved_path, new_folder)
+                    logger.info("Renamed → %s", new_folder)
+                    return new_folder
             return moved_path
 
         elif os.path.isfile(moved_path) or os.path.islink(moved_path):
-            # Single file — wrap in a properly-named folder
+            # Single file — place into existing or new folder
             _, ext = os.path.splitext(moved_path)
-            new_folder = os.path.join(parent_dir, base_name)
-            os.makedirs(new_folder, exist_ok=True)
+            # Check if a folder with the same ID tag already exists
+            existing = None
+            for entry in os.listdir(parent_dir):
+                candidate = os.path.join(parent_dir, entry)
+                if os.path.isdir(candidate) and id_tag in entry:
+                    existing = candidate
+                    break
+            target_folder = existing if existing else os.path.join(parent_dir, base_name)
+            os.makedirs(target_folder, exist_ok=True)
             if is_movie:
-                new_file = os.path.join(new_folder, f"{base_name}{ext}")
+                new_file = os.path.join(target_folder, f"{base_name}{ext}")
             else:
                 # Shows: keep original filename
                 new_file = os.path.join(
-                    new_folder, os.path.basename(moved_path))
+                    target_folder, os.path.basename(moved_path))
             shutil.move(moved_path, new_file)
-            logger.info("Renamed → %s", new_folder)
-            return new_folder
+            logger.info("Renamed → %s", target_folder)
+            return target_folder
 
     except Exception:
         logger.exception("rename_media_folder failed for %s", moved_path)
@@ -343,9 +373,9 @@ class AutomationEngine:
     """Manages the background download automation loop."""
 
     # Concurrency limits
-    MAX_CONCURRENT = 5          # total simultaneous downloads
+    MAX_CONCURRENT = 6          # total simultaneous downloads
     MAX_MOVIES = 4              # max concurrent movie downloads
-    MAX_SERIES = 1              # max concurrent series downloads
+    MAX_SERIES = 2              # max concurrent series downloads
 
     def __init__(self, app_state):
         self.app_state = app_state
@@ -353,6 +383,8 @@ class AutomationEngine:
         self._stop = False
         self._movie_sem = Semaphore(self.MAX_MOVIES)
         self._series_sem = Semaphore(self.MAX_SERIES)
+        self._movie_dl_slots = Semaphore(self.MAX_MOVIES)
+        self._series_dl_slots = Semaphore(self.MAX_SERIES)
 
     @property
     def running(self):
@@ -360,8 +392,9 @@ class AutomationEngine:
 
     def start(self):
         """Start the automation loop."""
-        if self.app_state.automation_running:
+        if self._thread and self._thread.is_alive():
             self.app_state.add_log("Automation is already running")
+            self.app_state.automation_running = True
             return
 
         self._stop = False
@@ -372,13 +405,13 @@ class AutomationEngine:
 
     def stop(self):
         """Stop the automation loop."""
-        if not self.app_state.automation_running:
+        if not self._thread or not self._thread.is_alive():
+            self.app_state.automation_running = False
             self.app_state.add_log("Automation is not running")
             return
 
         self._stop = True
-        self.app_state.automation_running = False
-        self.app_state.add_log("Stopping automation after current item finishes...")
+        self.app_state.add_log("Stop requested — finishing current in-flight work...")
 
     def _run_loop(self):
         """Main automation loop - mirrors the legacy threaded() function."""
@@ -389,6 +422,11 @@ class AutomationEngine:
 
             import content
             import content.classes
+
+            # Reset in-memory session state so a fresh start doesn't
+            # remember downloads / retries from the previous run.
+            content.classes.media.ignore_queue.clear()
+            content.classes.media.downloaded_versions.clear()
             import content.services
             import content.services.plex
             import content.services.trakt
@@ -418,49 +456,72 @@ class AutomationEngine:
             except Exception:
                 self.app_state.add_log("Couldn't sort by newest, using default order")
 
+            unique_watchlists = self._dedupe_elements_by_identity(self._unique(watchlists))
+
             # Log all watchlist items to content library before processing
-            self._log_all_watchlist_items(watchlists)
+            try:
+                removed = self.app_state.db.deduplicate_content_items()
+                if removed:
+                    self.app_state.add_log(f"Cleaned up {removed} duplicate content rows")
+            except Exception as e:
+                logger.debug("Content dedup cleanup failed: %s", e)
+
+            self._log_all_watchlist_items(unique_watchlists)
+            self._repair_existing_episode_ids()
 
             if len(library) > 0:
-                self.app_state.add_log(f"Checking new content ({len(watchlists)} items)...")
+                self.app_state.add_log(f"Checking new content ({len(unique_watchlists)} items)...")
             else:
-                self.app_state.add_log(f"Library empty — checking new content ({len(watchlists)} items)...")
+                self.app_state.add_log(f"Library empty — checking new content ({len(unique_watchlists)} items)...")
 
-            self._process_elements(self._unique(watchlists), library)
+            self._process_elements(unique_watchlists, library)
             self.app_state.add_log("Initial check complete")
 
             # Main polling loop
             while not self._stop:
-                if plex_watchlist.update() or overseerr_requests.update() or trakt_watchlist.update():
-                    lib_services = content.classes.library()
-                    library = lib_services[0]() if lib_services else []
+                # Call ALL update methods (avoid short-circuit so every
+                # service is polled on each iteration).
+                plex_updated = plex_watchlist.update()
+                overseerr_updated = overseerr_requests.update()
+                trakt_updated = trakt_watchlist.update()
 
+                if plex_updated or overseerr_updated or trakt_updated:
                     watchlists = plex_watchlist + trakt_watchlist + overseerr_requests
+
+                    # After download() mutates show objects via
+                    # _ensure_loaded(), the equality check inside
+                    # update()'s cleanup loop can fail, emptying
+                    # self.data.  Re-fetch fresh watchlists when that
+                    # happens so new items are never missed.
+                    if len(watchlists) == 0:
+                        logger.debug(
+                            "Watchlists empty after update — refetching "
+                            "(plex=%s overseerr=%s trakt=%s)",
+                            plex_updated, overseerr_updated, trakt_updated,
+                        )
+                        plex_watchlist = content.services.plex.watchlist()
+                        trakt_watchlist = content.services.trakt.watchlist()
+                        overseerr_requests = content.services.overseerr.requests()
+                        watchlists = plex_watchlist + trakt_watchlist + overseerr_requests
+
+                    if len(watchlists) == 0:
+                        # Still nothing — skip this cycle
+                        time.sleep(timeout)
+                        continue
+
                     try:
                         watchlists.data.sort(key=lambda s: s.watchlistedAt, reverse=True)
                     except Exception:
                         pass
 
+                    lib_services = content.classes.library()
+                    library = lib_services[0]() if lib_services else []
+
+                    unique_watchlists = self._dedupe_elements_by_identity(self._unique(watchlists))
+                    self._log_all_watchlist_items(unique_watchlists)
+                    self._repair_existing_episode_ids()
                     self.app_state.add_log("Checking updated content...")
-                    # Filter to newly added items only
-                    new_elements = []
-                    for element in self._unique(watchlists):
-                        if self._stop:
-                            break
-                        if hasattr(element, 'download'):
-                            newly_added = True
-                            if element.type == "show":
-                                for season in element.Seasons:
-                                    if season in content.classes.media.ignore_queue or not newly_added:
-                                        newly_added = False
-                                        break
-                                    for episode in season.Episodes:
-                                        if episode in content.classes.media.ignore_queue:
-                                            newly_added = False
-                                            break
-                            if newly_added:
-                                new_elements.append(element)
-                    self._process_elements(new_elements, library)
+                    self._process_elements(unique_watchlists, library)
                     self.app_state.add_log("Check complete")
 
                 elif timeout_counter >= regular_check:
@@ -478,7 +539,8 @@ class AutomationEngine:
                     library = lib_services[0]() if lib_services else []
                     timeout_counter = 0
 
-                    self._process_elements(self._unique(watchlists), library)
+                    unique_watchlists = self._dedupe_elements_by_identity(self._unique(watchlists))
+                    self._process_elements(unique_watchlists, library)
                     self.app_state.add_log("Regular check complete")
                 else:
                     timeout_counter += timeout
@@ -669,154 +731,62 @@ class AutomationEngine:
         app_state = self.app_state
         client = decypharr_client
 
-        def _decypharr_download(element, stream=False, query='', force=False):
-            """Route the download through Decypharr."""
-            if not element.Releases:
-                return False
-
-            release = element.Releases[0]
-
-            # ── Extract magnet / info-hash ────────────────────────
-            download_attr = getattr(release, "download", None)
-            if isinstance(download_attr, list):
-                magnet = download_attr[0] if download_attr else None
-            else:
-                magnet = download_attr
-            info_hash = getattr(release, "hash", None) or ""
-
-            if not info_hash and magnet and isinstance(magnet, str) and magnet.startswith("magnet:"):
-                import re as _re
-                m = _re.search(r'btih:([a-fA-F0-9]{40})', magnet)
-                if m:
-                    info_hash = m.group(1).lower()
-                else:
-                    m = _re.search(r'btih:([a-fA-F0-9]{32})', magnet)
-                    if m:
-                        info_hash = m.group(1).lower()
-
-            if not magnet and not info_hash:
-                return False
-
-            # ── Dedup: skip if this hash was already downloaded ───
-            if info_hash and app_state.db.is_hash_downloaded(info_hash):
-                app_state.add_log(
-                    f"⏭ Skipping (already downloaded): {release.title[:80]}"
-                )
-                logger.info("Skipping duplicate hash %s: %s",
-                            info_hash[:16], release.title[:60])
-                return True  # treat as success so legacy flow doesn't retry
-
-            # ── Determine category from the current version ───────
-            category = "default"
-            ver_name = "unknown"
-            if hasattr(element, 'version') and hasattr(element.version, 'name'):
-                ver_name = element.version.name
-                category = version_categories.get(ver_name, "default")
-
-            # ── Extract identifiers ──────────────────────────────
-            title_str = (element.query() if hasattr(element, 'query')
-                         and callable(element.query) else release.title)
-            imdb_id = None
-            tmdb_id = None
-            media_type = getattr(element, 'type', 'movie')
-            if hasattr(element, 'EID'):
-                for eid in element.EID:
-                    if 'imdb://' in eid:
-                        imdb_id = eid.replace('imdb://', '')
-                    elif 'tmdb://' in eid:
-                        tmdb_id = eid.replace('tmdb://', '')
-
-            # ── Create activity item ─────────────────────────────
-            clean_title = title_str.replace('.', ' ').strip()
-            activity_id = app_state.add_activity(
-                title=clean_title,
-                release_title=release.title,
-                info_hash=info_hash or "",
-                category=category,
-                imdb_id=imdb_id or "",
-            )
-            size_gb = release.size / 1024 if release.size > 100 else release.size
-            log_msg = (
-                f"Sending to Decypharr: {clean_title} | "
-                f"Release: {release.title[:90]} | "
-                f"{size_gb:.1f}GB | {ver_name}/{category}"
-            )
-            app_state.add_log(f"\u2b07 {log_msg}")
-            logger.info(log_msg)
-
-            # ── Send to Decypharr ────────────────────────────────
+        def _finalize_download(
+            *,
+            element,
+            release,
+            clean_title,
+            media_type,
+            imdb_id,
+            tmdb_id,
+            info_hash,
+            category,
+            ver_name,
+            size_gb,
+            activity_id,
+            slot_sem,
+        ):
+            completed_torrent = None
+            moved_path = None
             try:
-                if magnet and isinstance(magnet, str) and magnet.startswith("magnet:"):
-                    result = client.download_magnet(magnet, category=category)
-                elif info_hash:
-                    result = client.download_hash(info_hash, category=category)
-                elif magnet:
-                    result = client.add_torrent_url(magnet, category=category)
-                else:
-                    app_state.remove_activity(activity_id)
-                    return False
-
-                if not result:
-                    app_state.add_log(
-                        f"\u2717 Decypharr rejected: {release.title[:80]} [{ver_name}/{category}]"
-                    )
-                    app_state.remove_activity(activity_id)
-                    return False
-
-                app_state.update_activity(
-                    activity_id, status="sent_to_decypharr")
-
-                # ── Poll for completion (up to 5 min) ────────────
-                completed_torrent = None  # torrent dict on success
                 if info_hash:
-                    try:
-                        from webapp.decypharr import TorrentState
+                    from webapp.decypharr import TorrentState
 
-                        def _on_progress(state, progress):
-                            if TorrentState.is_downloading(state):
-                                app_state.update_activity(
-                                    activity_id, status="downloading",
-                                    progress=progress,
-                                )
-                            elif TorrentState.is_completed(state):
-                                app_state.update_activity(
-                                    activity_id, status="downloaded",
-                                    progress=1.0,
-                                )
-
-                        poll = client.wait_for_completion(
-                            info_hash,
-                            timeout=300,
-                            poll_interval=5,
-                            remove_on_complete=False,
-                            progress_callback=_on_progress,
-                        )
-                        if poll["success"]:
-                            completed_torrent = poll.get("torrent")
+                    def _on_progress(state, progress):
+                        if TorrentState.is_downloading(state):
                             app_state.update_activity(
-                                activity_id, status="processing", progress=1.0)
-                        else:
-                            app_state.add_log(
-                                f"\u2717 Download failed: {clean_title} ({poll.get('state', 'unknown')})"
+                                activity_id, status="downloading",
+                                progress=progress,
                             )
-                            app_state.remove_activity(activity_id)
-                            activity_id = None
-                            return False
-                    except Exception as poll_err:
-                        logger.debug("Torrent polling error (non-fatal): %s",
-                                     poll_err)
+                        elif TorrentState.is_completed(state):
+                            app_state.update_activity(
+                                activity_id, status="downloaded",
+                                progress=1.0,
+                            )
 
-                # ── Move content to media folder ─────────────────
-                moved_path = None
+                    poll = client.wait_for_completion(
+                        info_hash,
+                        timeout=None,
+                        poll_interval=5,
+                        remove_on_complete=False,
+                        progress_callback=_on_progress,
+                    )
+                    if poll["success"]:
+                        completed_torrent = poll.get("torrent")
+                        app_state.update_activity(
+                            activity_id, status="processing", progress=1.0)
+                    else:
+                        app_state.add_log(
+                            f"\u2717 Download failed: {clean_title} ({poll.get('state', 'unknown')})"
+                        )
+                        return
+
                 if completed_torrent:
                     moved_path = move_to_media_folder(
                         app_state, completed_torrent, category,
                         clean_title, activity_id,
                     )
 
-                # ── Rename to standard naming scheme ─────────────
-                # Use show-level title / year / IDs regardless of whether
-                # the element is a season or episode.
                 if moved_path:
                     rename_title = clean_title
                     rename_year = getattr(element, 'year', None)
@@ -861,14 +831,12 @@ class AutomationEngine:
                         tmdb_id=rename_tmdb, imdb_id=rename_imdb,
                     )
 
-                # ── Remove torrent from Decypharr (after move) ───
                 if info_hash:
                     try:
                         client.remove_torrent(info_hash, delete_files=False)
                     except Exception:
                         logger.debug("Failed to remove torrent %s", info_hash[:16])
 
-                # ── Log download ─────────────────────────────────
                 try:
                     app_state.db.add_download_log(
                         title=clean_title,
@@ -886,53 +854,199 @@ class AutomationEngine:
                 except Exception:
                     logger.debug("Failed to log download")
 
-                # ── Update content library → collected ───────────
                 try:
                     is_anime = (hasattr(element, 'isanime')
                                 and element.isanime())
+                    final_media_type = media_type
                     if is_anime:
-                        if media_type == "movie":
-                            media_type = "anime_movie"
-                        elif media_type == "show":
-                            media_type = "anime_show"
+                        if final_media_type == "movie":
+                            final_media_type = "anime_movie"
+                        elif final_media_type == "show":
+                            final_media_type = "anime_show"
 
-                    app_state.db.upsert_content_item(
-                        imdb_id=imdb_id,
-                        tmdb_id=tmdb_id,
-                        title=clean_title,
-                        media_type=media_type,
-                        year=getattr(element, 'year', None),
-                        status="collected",
-                        source="automation",
-                    )
+                    if final_media_type in ("episode", "season"):
+                        app_state.db.add_content_item(
+                            imdb_id=imdb_id,
+                            tmdb_id=tmdb_id,
+                            title=clean_title,
+                            media_type=final_media_type,
+                            year=getattr(element, 'year', None),
+                            status="collected",
+                            source="automation",
+                        )
+                    else:
+                        app_state.db.upsert_content_item(
+                            imdb_id=imdb_id,
+                            tmdb_id=tmdb_id,
+                            title=clean_title,
+                            media_type=final_media_type,
+                            year=getattr(element, 'year', None),
+                            status="collected",
+                            source="automation",
+                        )
                 except Exception:
                     logger.debug("Failed to update content item")
 
-                # ── Trigger Plex library refresh ─────────────────
                 if moved_path:
                     refresh_plex_library(app_state, media_type, moved_path)
 
-                # Done
-                if activity_id:
-                    app_state.update_activity(
-                        activity_id, status="completed", progress=1.0)
-                    time.sleep(3)
+                app_state.update_activity(
+                    activity_id, status="completed", progress=1.0)
+                time.sleep(3)
+            except Exception as e:
+                logger.exception("Decypharr finalize error for %s", release.title[:60])
+                app_state.add_log(f"\u2717 Decypharr finalize error: {e}")
+            finally:
+                try:
                     app_state.remove_activity(activity_id)
-                    activity_id = None
+                except Exception:
+                    pass
+                slot_sem.release()
 
+        def _decypharr_download(element, stream=False, query='', force=False):
+            """Route the download through Decypharr."""
+            if not element.Releases:
+                return False
+
+            release = element.Releases[0]
+
+            # ── Extract magnet / info-hash ────────────────────────
+            download_attr = getattr(release, "download", None)
+            if isinstance(download_attr, list):
+                magnet = download_attr[0] if download_attr else None
+            else:
+                magnet = download_attr
+            info_hash = getattr(release, "hash", None) or ""
+
+            if not info_hash and magnet and isinstance(magnet, str) and magnet.startswith("magnet:"):
+                import re as _re
+                m = _re.search(r'btih:([a-fA-F0-9]{40})', magnet)
+                if m:
+                    info_hash = m.group(1).lower()
+                else:
+                    m = _re.search(r'btih:([a-fA-F0-9]{32})', magnet)
+                    if m:
+                        info_hash = m.group(1).lower()
+
+            if not magnet and not info_hash:
+                return False
+
+            # ── Dedup: skip if this hash was already downloaded ───
+            if info_hash and app_state.db.is_hash_downloaded(info_hash):
+                app_state.add_log(
+                    f"⏭ Skipping (already downloaded): {release.title[:80]}"
+                )
+                logger.info("Skipping duplicate hash %s: %s",
+                            info_hash[:16], release.title[:60])
+                # Important: return False so the legacy debrid_download() loop
+                # can continue to the next candidate release for this item.
+                # Returning True marks the item as downloaded and can cause
+                # episodes/seasons to stop after the first matching torrent.
+                return False
+
+            # ── Determine category from the current version ───────
+            category = "default"
+            ver_name = "unknown"
+            if hasattr(element, 'version') and hasattr(element.version, 'name'):
+                ver_name = element.version.name
+                category = version_categories.get(ver_name, "default")
+
+            # ── Extract identifiers ──────────────────────────────
+            title_str = (element.query() if hasattr(element, 'query')
+                         and callable(element.query) else release.title)
+            imdb_id = None
+            tmdb_id = None
+            media_type = getattr(element, 'type', 'movie')
+            id_source = []
+            if media_type == 'episode':
+                id_source = getattr(element, 'grandparentEID', [])
+            elif media_type in ('season', 'anime_show'):
+                id_source = getattr(element, 'parentEID', [])
+            elif hasattr(element, 'EID'):
+                id_source = getattr(element, 'EID', [])
+            for eid in id_source:
+                if 'imdb://' in eid:
+                    imdb_id = eid.replace('imdb://', '')
+                elif 'tmdb://' in eid:
+                    tmdb_id = eid.replace('tmdb://', '')
+
+            # ── Create activity item ─────────────────────────────
+            clean_title = title_str.replace('.', ' ').strip()
+            activity_id = app_state.add_activity(
+                title=clean_title,
+                release_title=release.title,
+                info_hash=info_hash or "",
+                category=category,
+                imdb_id=imdb_id or "",
+            )
+            size_gb = release.size / 1024 if release.size > 100 else release.size
+            log_msg = (
+                f"Sending to Decypharr: {clean_title} | "
+                f"Release: {release.title[:90]} | "
+                f"{size_gb:.1f}GB | {ver_name}/{category}"
+            )
+            app_state.add_log(f"\u2b07 {log_msg}")
+            logger.info(log_msg)
+
+            is_series_media = media_type in ('show', 'season', 'episode', 'anime_show')
+            slot_sem = self._series_dl_slots if is_series_media else self._movie_dl_slots
+            slot_sem.acquire()
+
+            # ── Send to Decypharr ────────────────────────────────
+            try:
+                if magnet and isinstance(magnet, str) and magnet.startswith("magnet:"):
+                    result = client.download_magnet(magnet, category=category)
+                elif info_hash:
+                    result = client.download_hash(info_hash, category=category)
+                elif magnet:
+                    result = client.add_torrent_url(magnet, category=category)
+                else:
+                    app_state.remove_activity(activity_id)
+                    return False
+
+                if not result:
+                    app_state.add_log(
+                        f"\u2717 Decypharr rejected: {release.title[:80]} [{ver_name}/{category}]"
+                    )
+                    app_state.remove_activity(activity_id)
+                    slot_sem.release()
+                    return False
+
+                app_state.update_activity(
+                    activity_id, status="sent_to_decypharr")
+                Thread(
+                    target=_finalize_download,
+                    kwargs={
+                        "element": element,
+                        "release": release,
+                        "clean_title": clean_title,
+                        "media_type": media_type,
+                        "imdb_id": imdb_id,
+                        "tmdb_id": tmdb_id,
+                        "info_hash": info_hash,
+                        "category": category,
+                        "ver_name": ver_name,
+                        "size_gb": size_gb,
+                        "activity_id": activity_id,
+                        "slot_sem": slot_sem,
+                    },
+                    daemon=True,
+                ).start()
                 return True
 
             except Exception as e:
                 logger.exception("Decypharr download error for %s",
                                  release.title[:60])
                 app_state.add_log(f"\u2717 Decypharr error: {e}")
+                try:
+                    slot_sem.release()
+                except Exception:
+                    pass
+                try:
+                    app_state.remove_activity(activity_id)
+                except Exception:
+                    pass
                 return False
-            finally:
-                if activity_id:
-                    try:
-                        app_state.remove_activity(activity_id)
-                    except Exception:
-                        pass
 
         # Patch the global debrid.download function
         debrid.download = _decypharr_download
@@ -940,7 +1054,7 @@ class AutomationEngine:
 
     def _log_all_watchlist_items(self, watchlists):
         """Batch-insert all watchlist items to content library before processing."""
-        for element in self._unique(watchlists):
+        for element in watchlists:
             try:
                 imdb_id = None
                 tmdb_id = None
@@ -975,7 +1089,52 @@ class AutomationEngine:
                 )
             except Exception as e:
                 logger.debug(f"Failed to log watchlist item: {e}")
-        self.app_state.add_log(f"Added {len(watchlists)} watchlist items to content library")
+        self.app_state.add_log(f"Added/updated {len(watchlists)} watchlist items in content library")
+
+    def _dedupe_elements_by_identity(self, elements):
+        """Dedupe elements by stable identity (IDs/title/year/episode numbers)."""
+        unique = []
+        seen = set()
+
+        def _norm(value):
+            return re.sub(r'\s+', ' ', (value or '').strip().lower())
+
+        for element in elements:
+            media_type = getattr(element, 'type', 'unknown')
+
+            ids = []
+            for attr in ('EID', 'parentEID', 'grandparentEID'):
+                if hasattr(element, attr):
+                    try:
+                        ids.extend(getattr(element, attr) or [])
+                    except Exception:
+                        pass
+
+            imdb_id = next((eid.replace('imdb://', '') for eid in ids if isinstance(eid, str) and eid.startswith('imdb://')), '')
+            tmdb_id = next((eid.replace('tmdb://', '') for eid in ids if isinstance(eid, str) and eid.startswith('tmdb://')), '')
+
+            title = getattr(element, 'title', '')
+            if media_type == 'season':
+                title = getattr(element, 'parentTitle', title)
+            elif media_type == 'episode':
+                title = getattr(element, 'grandparentTitle', getattr(element, 'parentTitle', title))
+
+            key = (
+                media_type,
+                imdb_id,
+                tmdb_id,
+                _norm(title),
+                getattr(element, 'year', None) or getattr(element, 'parentYear', None) or getattr(element, 'grandparentYear', None),
+                getattr(element, 'parentIndex', None),
+                getattr(element, 'index', None),
+            )
+
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(element)
+
+        return unique
 
     def _log_content_item(self, element):
         """Log a content item with its IDs to the database."""
@@ -1029,18 +1188,222 @@ class AutomationEngine:
             self.app_state.add_log(
                 f"Processing: {title} | IMDB: {imdb_id or 'N/A'} | TMDB: {tmdb_id or 'N/A'} | Type: {media_type}"
             )
+
+            # Debug: log season info for shows / anime
+            
         except Exception as e:
             logger.debug(f"Failed to log content item: {e}")
 
+    def _repair_existing_episode_ids(self):
+        """Ensure episode rows use their parent show's IMDB/TMDB IDs."""
+        db = self.app_state.db
+        if not db:
+            return
+        try:
+            from database.models import ContentItem
+
+            def _norm(name):
+                return re.sub(r'\s+', ' ', (name or '').strip().lower())
+
+            updated = 0
+            with db.session_scope() as session:
+                shows = session.query(ContentItem).filter(
+                    ContentItem.media_type.in_(["show", "anime_show"])
+                ).all()
+                shows_by_title = {}
+                for show in shows:
+                    key = _norm(show.title)
+                    shows_by_title.setdefault(key, []).append(show)
+
+                episodes = session.query(ContentItem).filter_by(media_type="episode").all()
+                for episode in episodes:
+                    m = re.search(r'\sS\d{1,2}E\d{1,2}\b', episode.title or '', re.I)
+                    if not m:
+                        continue
+                    base_title = _norm((episode.title or '')[:m.start()])
+                    candidates = shows_by_title.get(base_title, [])
+                    if not candidates:
+                        continue
+
+                    show = None
+                    if episode.year:
+                        show = next((s for s in candidates if s.year == episode.year), None)
+                    if show is None:
+                        show = candidates[0]
+
+                    changed = False
+                    if show.imdb_id and episode.imdb_id != show.imdb_id:
+                        episode.imdb_id = show.imdb_id
+                        changed = True
+                    if show.tmdb_id and episode.tmdb_id != show.tmdb_id:
+                        episode.tmdb_id = show.tmdb_id
+                        changed = True
+                    if changed:
+                        updated += 1
+
+            if updated:
+                self.app_state.add_log(f"Fixed episode IDs for {updated} items")
+                logger.info("Episode ID repair updated %d items", updated)
+        except Exception as e:
+            logger.debug("Episode ID repair failed: %s", e)
+
+    def _reconcile_with_plex(self, elements, library):
+        """Remove stale in-memory blocks for items not present in Plex.
+
+        The legacy system tracks ``ignore_queue`` (retry backoff) and
+        ``downloaded_versions`` (already-grabbed-this-session) in class-level
+        lists.  If an item was downloaded but later disappears from Plex
+        (manual delete, failed import, etc.) these stale entries prevent
+        reprocessing.  This method cross-checks against the live Plex
+        library and clears the blockers so the item is retried.
+        """
+        import content.classes
+
+        cleared = 0
+        try:
+            for element in elements:
+                if not hasattr(element, 'collected'):
+                    continue
+                # Lazily load full metadata so collected() can compare
+                if hasattr(element, '_ensure_loaded'):
+                    element._ensure_loaded()
+
+                media_type = getattr(element, 'type', 'movie')
+
+                if media_type == 'movie':
+                    if element.collected(library):
+                        continue
+                    # Movie not in Plex — clear blockers
+                    q = element.query() if hasattr(element, 'query') else ''
+                    # Remove from ignore queue
+                    for queued in content.classes.media.ignore_queue[:]:
+                        if queued == element:
+                            content.classes.media.ignore_queue.remove(queued)
+                            cleared += 1
+                    # Remove downloaded_versions entries
+                    content.classes.media.downloaded_versions[:] = [
+                        v for v in content.classes.media.downloaded_versions
+                        if not v.startswith(q + ' [')
+                    ]
+                    # Clear DB hash logs so the same torrent can be re-sent
+                    self._clear_hash_logs_for(element)
+                    # Reset DB status so dashboard shows it needs reprocessing
+                    self._reset_content_status(element, 'downloading')
+
+                elif media_type == 'show':
+                    # Check every episode individually against Plex
+                    any_missing = False
+                    for season in getattr(element, 'Seasons', []):
+                        season_missing = False
+                        for episode in getattr(season, 'Episodes', []):
+                            if episode.collected(library):
+                                continue
+                            any_missing = True
+                            season_missing = True
+                            eq = episode.query() if hasattr(episode, 'query') else ''
+                            for queued in content.classes.media.ignore_queue[:]:
+                                if queued == episode:
+                                    content.classes.media.ignore_queue.remove(queued)
+                                    cleared += 1
+                            content.classes.media.downloaded_versions[:] = [
+                                v for v in content.classes.media.downloaded_versions
+                                if not v.startswith(eq + ' [')
+                            ]
+                            self._clear_hash_logs_for(episode)
+                        # Clear season-level blocks if any episode is missing
+                        if season_missing:
+                            sq = season.query() if hasattr(season, 'query') else ''
+                            for queued in content.classes.media.ignore_queue[:]:
+                                if queued == season:
+                                    content.classes.media.ignore_queue.remove(queued)
+                                    cleared += 1
+                            content.classes.media.downloaded_versions[:] = [
+                                v for v in content.classes.media.downloaded_versions
+                                if not v.startswith(sq + ' [')
+                            ]
+                    # Clear show-level blocks if any episode is missing
+                    if any_missing:
+                        for queued in content.classes.media.ignore_queue[:]:
+                            if queued == element:
+                                content.classes.media.ignore_queue.remove(queued)
+                                cleared += 1
+                        self._clear_hash_logs_for(element)
+                        self._reset_content_status(element, 'downloading')
+
+            if cleared:
+                logger.info("Plex reconcile: cleared %d stale blocks", cleared)
+        except Exception as e:
+            logger.debug("Plex reconciliation error: %s", e)
+
+    def _clear_hash_logs_for(self, element):
+        """Remove 'completed' download-log entries for an element so its
+        hashes are no longer blocked by the dedup check."""
+        db = self.app_state.db
+        if not db:
+            return
+        try:
+            imdb_id = None
+            eids = getattr(element, 'EID', [])
+            if getattr(element, 'type', '') == 'episode':
+                eids = getattr(element, 'grandparentEID', eids)
+            for eid in eids:
+                if 'imdb://' in eid:
+                    imdb_id = eid.replace('imdb://', '')
+                    break
+            if not imdb_id:
+                return
+            from database.models import DownloadLog
+            with db.session_scope() as session:
+                deleted = session.query(DownloadLog).filter_by(
+                    imdb_id=imdb_id, status="completed"
+                ).delete()
+                if deleted:
+                    logger.info("Cleared %d hash log(s) for %s (not in Plex)",
+                                deleted, imdb_id)
+        except Exception as e:
+            logger.debug("Failed to clear hash logs: %s", e)
+
+    def _reset_content_status(self, element, status):
+        """Reset DB content status for an item missing from Plex."""
+        db = self.app_state.db
+        if not db:
+            return
+        try:
+            imdb_id = None
+            eids = getattr(element, 'EID', [])
+            for eid in eids:
+                if 'imdb://' in eid:
+                    imdb_id = eid.replace('imdb://', '')
+                    break
+            if imdb_id:
+                from database.models import ContentItem
+                with db.session_scope() as session:
+                    item = session.query(ContentItem).filter_by(
+                        imdb_id=imdb_id, status="collected"
+                    ).first()
+                    if item:
+                        item.status = status
+                        logger.info("Reset %s status → %s (not in Plex)",
+                                    imdb_id, status)
+        except Exception as e:
+            logger.debug("Failed to reset content status: %s", e)
+
     def _process_elements(self, elements, library):
         """Process downloadable elements concurrently (max 4 movies, 1 series)."""
+        # Clear stale in-memory blocks for items missing from Plex
+        self._reconcile_with_plex(elements, library)
+
         def _do_download(element):
             if self._stop:
                 return
             media_type = getattr(element, 'type', 'movie')
             is_series = media_type in ('show', 'season')
             sem = self._series_sem if is_series else self._movie_sem
-            sem.acquire()
+            acquired = False
+            while not self._stop and not acquired:
+                acquired = sem.acquire(timeout=0.5)
+            if not acquired:
+                return
             try:
                 if self._stop:
                     return
@@ -1079,3 +1442,12 @@ class AutomationEngine:
             if is_unique:
                 unique_objects.append(obj)
         return unique_objects
+
+
+def get_automation_engine(app_state):
+    """Return one shared AutomationEngine instance per app_state."""
+    engine = getattr(app_state, "automation_engine", None)
+    if engine is None:
+        engine = AutomationEngine(app_state)
+        app_state.automation_engine = engine
+    return engine

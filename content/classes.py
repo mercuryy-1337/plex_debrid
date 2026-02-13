@@ -1165,7 +1165,7 @@ class media:
         if hasattr(self, '_ensure_loaded'):
             self._ensure_loaded()
         if self.type in ["movie", "show"] and ((not hasattr(self, "title") or self.title == "" or self.title == None) or (not hasattr(self, "year") or self.year == None or self.year == "")):
-            ui_print(
+            logger.error(
                 "error: media item has no title or release year. This unknown movie/show might not be released yet.")
             return
         scraper.services.overwrite = []
@@ -1186,7 +1186,7 @@ class media:
             if (len(self.uncollected(library)) > 0 or self.version_missing()) and len(self.versions()) > 0:
                 if self.released() and not self.watched() and not self.downloading():
                     if not hasattr(self, "year") or self.year == None:
-                        ui_print("error: media item has no release year.")
+                        logger.error("error: media item has no release year.")
                         return
                     tic = time.perf_counter()
                     alternate_years = [self.year, self.year - 1, self.year + 1]
@@ -1447,9 +1447,12 @@ class media:
                 if debrid_downloaded:
                     refresh_ = True
                 if self.isanime():
+                    # Embed S/E hint so torrentio builds the correct
+                    # /stream/series/imdb:S:E URL instead of /stream/movie/.
+                    se_hint = 'S' + str("{:02d}".format(self.parentIndex)) + 'E' + str("{:02d}".format(self.index))
                     for title in self.alternate_titles[:3]:
                         self.Releases += scraper.scrape(self.anime_query(title), self.deviation(
-                        ) + "("+imdbID+")?(nyaa"+"|".join(self.alternate_titles)+")?")
+                        ) + "("+imdbID+")?(" + se_hint + ")?(nyaa"+"|".join(self.alternate_titles)+")?")
                         if len(self.Releases) > 0:
                             break
                 if len(self.Releases) == 0 or not self.isanime():

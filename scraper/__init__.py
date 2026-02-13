@@ -13,10 +13,10 @@ def scrape(query, altquery="(.*)"):
     for sequence in scrapers:
         servicenames = "[" + ",".join(x.name for x in sequence) + "]"
         if regex.search(r'(tt[0-9]+)', query, regex.I):
-            ui_print('scraping sources '+servicenames+' for IMDB ID "' + query + '" ...')
+            logger.info('scraping sources '+servicenames+' for IMDB ID "' + query + '" ...')
         else:
-            ui_print('scraping sources '+servicenames+' for query "' + query + '" ...')
-        ui_print('accepting titles that regex match "' + altquery + '" ...', debug=ui_settings.debug)
+            logger.info('scraping sources '+servicenames+' for query "' + query + '" ...')
+        #logger.Logger('accepting titles that regex match "' + altquery + '" ...')
         results = [None] * len(sequence)
         threads = []
         for index, scraper_ in enumerate(sequence):
@@ -36,7 +36,7 @@ def scrape(query, altquery="(.*)"):
                 scraped_releases += result
         for release in scraped_releases:
             release.title = ''.join([i if ord(i) < 512 else '' for i in release.title])
-        ui_print('done - found ' + str(len(scraped_releases)) + ' releases')
+        logger.info('done - found ' + str(len(scraped_releases)) + ' releases')
         if len(scraped_releases) > 0:
             break
     return scraped_releases

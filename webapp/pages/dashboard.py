@@ -10,7 +10,7 @@ from nicegui import ui, Client
 
 from webapp.components import stat_card, content_card, page_header, empty_state
 from webapp.theme import COLORS
-from webapp.automation import AutomationEngine
+from webapp.automation import get_automation_engine
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def _enrich_content_items(db, items):
 
 
 async def render(app_state, client: Client):
-    engine = AutomationEngine(app_state)
+    engine = get_automation_engine(app_state)
 
     with ui.column().classes("p-6 gap-6 w-full"):
         page_header("Dashboard", "Overview of your pd_reloaded instance")
@@ -93,12 +93,10 @@ async def render(app_state, client: Client):
                     async def toggle_automation():
                         if app_state.automation_running:
                             engine.stop()
-                            status_icon.props("color=red")
-                            status_text.text = "Automation is stopped"
-                            status_text.style(f"color: {COLORS['error']}")
-                            toggle_btn.props('color=green icon=play_arrow')
-                            toggle_btn.text = "Start"
-                            ui.notify("Automation stopped", type="warning")
+                            status_icon.props("color=amber")
+                            status_text.text = "Stopping automation..."
+                            status_text.style(f"color: {COLORS['warning']}")
+                            ui.notify("Stop requested", type="warning")
                         else:
                             engine.start()
                             status_icon.props("color=green")
@@ -176,8 +174,11 @@ async def render(app_state, client: Client):
                     "flat color=amber")
 
             content_items = app_state.db.get_all_content()
-            # Seasons are tracked via their parent show — hide them here
-            content_items = [i for i in content_items if i.get("media_type") != "season"]
+            # Seasons and episodes are tracked via their parent show — hide them here
+            content_items = [
+                i for i in content_items
+                if i.get("media_type") not in ("season", "episode")
+            ]
 
             # Enrich items missing poster/year in the background (first load)
             needs_enrich = [i for i in content_items if not i.get("poster_url") and i.get("imdb_id")]

@@ -88,13 +88,17 @@ def scrape(query, altquery):
         try:
             if type == "show":
                 url = "https://v3-cinemeta.strem.io/catalog/series/top/search=" + query + ".json"
+                logger.info('[torrentio] metadata url: %s', url)
                 meta = get(url)
                 similarity = difflib.SequenceMatcher(None, query, meta.metas[0].name).ratio()
                 query = meta.metas[0].imdb_id if similarity > 0.5 else meta.metas[1].imdb_id
+                logger.info('[torrentio] resolved show query "%s" -> imdb=%s (similarity=%.3f)', plain_text, query, similarity)
             else:
                 url = "https://v3-cinemeta.strem.io/catalog/movie/top/search=" + query + ".json"
+                logger.info('[torrentio] metadata url: %s', url)
                 meta = get(url)
                 query = meta.metas[0].imdb_id
+                logger.info('[torrentio] resolved movie query "%s" -> imdb=%s', plain_text, query)
         except:
             try:
                 if type == "movie":
@@ -102,12 +106,15 @@ def scrape(query, altquery):
                     s = 1
                     e = 1
                     url = "https://v3-cinemeta.strem.io/catalog/series/top/search=" + query + ".json"
+                    logger.info('[torrentio] metadata url (fallback): %s', url)
                     meta = get(url)
                 else:
                     type = "movie"
                     url = "https://v3-cinemeta.strem.io/catalog/movie/top/search=" + query + ".json"
+                    logger.info('[torrentio] metadata url (fallback): %s', url)
                     meta = get(url)
                 query = meta.metas[0].imdb_id
+                logger.info('[torrentio] resolved fallback query "%s" -> imdb=%s (type=%s)', plain_text, query, type)
             except:
                 ui_print('[torrentio] error: could not find IMDB ID')
                 return scraped_releases
@@ -122,8 +129,10 @@ def scrape(query, altquery):
             if plain_text != "":
                 try:
                     url = "https://v3-cinemeta.strem.io/catalog/series/top/search=" + plain_text + ".json"
+                    logger.info('[torrentio] metadata url (movie->show fallback): %s', url)
                     meta = get(url)
                     query = meta.metas[0].imdb_id
+                    logger.info('[torrentio] resolved movie->show fallback "%s" -> imdb=%s', plain_text, query)
                 except:
                     ui_print('[torrentio] error: could not find IMDB ID')
                     return scraped_releases

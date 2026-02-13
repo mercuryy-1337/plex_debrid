@@ -45,6 +45,56 @@ async def render(app_state, client: Client):
                     on_change=lambda e: update_filter("status", e.value),
                 ).classes("min-w-36").props("outlined dense dark color=amber")
 
+        # ─── Danger zone ───────────────────────────────────
+        with ui.card().classes("w-full p-4"):
+            with ui.row().classes("items-center justify-between w-full"):
+                with ui.column().classes("gap-0"):
+                    ui.label("Clear Library").classes("text-sm font-semibold").style(
+                        f"color: {COLORS['error']}")
+                    ui.label("Remove all content, download history, and ignored items.").classes(
+                        "text-xs").style(f"color: {COLORS['text_muted']}")
+
+                async def _confirm_clear():
+                    with ui.dialog() as confirm_dlg, ui.card().classes("p-4").style(
+                        f"background: {COLORS['surface']}; min-width: 360px"
+                    ):
+                        ui.label("Clear Entire Library?").classes(
+                            "text-base font-bold mb-1").style(f"color: {COLORS['error']}")
+                        ui.label(
+                            "This will permanently delete all content items, download history "
+                            "(including hashes), and ignored items. This cannot be undone."
+                        ).classes("text-sm mb-3").style(f"color: {COLORS['text_muted']}")
+                        with ui.row().classes("w-full justify-end gap-2"):
+                            ui.button("Cancel", on_click=confirm_dlg.close).props("flat color=grey")
+
+                            async def do_clear():
+                                result = app_state.db.clear_all_content()
+                                # Reset in-memory state from the legacy content module
+                                try:
+                                    from content.classes import media
+                                    media.ignore_queue.clear()
+                                    media.downloaded_versions.clear()
+                                except Exception:
+                                    pass
+                                confirm_dlg.close()
+                                parts = []
+                                if result["content"]:
+                                    parts.append(f"{result['content']} content items")
+                                if result["logs"]:
+                                    parts.append(f"{result['logs']} download logs")
+                                if result["ignored"]:
+                                    parts.append(f"{result['ignored']} ignored items")
+                                msg = f"Cleared {', '.join(parts)}" if parts else "Library was already empty"
+                                ui.notify(msg, type="positive")
+                                await load_content()
+
+                            ui.button("Clear All", on_click=do_clear, icon="delete_forever").props(
+                                "color=red push")
+                    confirm_dlg.open()
+
+                ui.button("Clear Library", on_click=_confirm_clear, icon="delete_sweep").props(
+                    "color=red push dense outline")
+
         # ─── Content Tabs ──────────────────────────────────
         content_container = ui.column().classes("w-full gap-6")
 
