@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import os
+import requests
 from concurrent.futures import ThreadPoolExecutor
 from nicegui import ui, Client
 
@@ -288,7 +289,100 @@ async def _render_plex_settings(app_state):
         scan_delay = db.get_setting("Plex library refresh delay", "10")
         auto_remove = db.get_setting("Plex auto remove", "movie")
 
-        url_input = ui.input("Server Address", value=server_url).classes("w-full").props("outlined dark color=amber")
+        def _discover_server_url_options():
+            users = db.get_plex_users()
+            primary = next((u for u in users if u.get("is_primary")), users[0] if users else None)
+            if not primary:
+                return [server_url] if server_url else []
+
+            token = primary.get("token", "")
+            client_id = primary.get("client_id", "")
+            if not token or not client_id:
+                urls = [server_url] if server_url else []
+                if primary.get("server_url") and primary.get("server_url") not in urls:
+                    urls.append(primary.get("server_url"))
+                return urls
+
+            reachable = []
+
+            def _add_url(url):
+                if url and url not in reachable:
+                    reachable.append(url)
+
+            try:
+                servers = get_servers(token, client_id)
+            except Exception:
+                servers = []
+
+            target = None
+            machine_id = primary.get("server_machine_id", "")
+            server_name = primary.get("server_name", "")
+            for srv in servers:
+                if machine_id and srv.get("machine_id") == machine_id:
+                    target = srv
+                    break
+            if target is None:
+                for srv in servers:
+                    if server_name and srv.get("name") == server_name:
+                        target = srv
+                        break
+            if target is None and servers:
+                target = servers[0]
+
+            if target:
+                access_token = target.get("access_token") or token
+                for conn in target.get("connections", []) or []:
+                    uri = conn.get("uri", "")
+                    if not uri:
+                        continue
+                    try:
+                        resp = requests.get(
+                            f"{uri}/identity",
+                            headers={"X-Plex-Token": access_token, "Accept": "application/json"},
+                            timeout=3,
+                            verify=False,
+                        )
+                        if resp.status_code == 200:
+                            _add_url(uri)
+                    except Exception:
+                        continue
+                _add_url(target.get("uri", ""))
+
+            _add_url(primary.get("server_url", ""))
+            _add_url(server_url)
+            return reachable
+
+        default_server_url = server_url
+        server_url_options = [default_server_url] if default_server_url else []
+
+        with ui.row().classes("items-center gap-2 w-full"):
+            url_select = ui.select(
+                server_url_options,
+                value=default_server_url,
+                label="Server Address",
+            ).classes("flex-1").props("outlined dark color=amber")
+
+            async def _refresh_server_urls(silent=False):
+                loop_ = asyncio.get_event_loop()
+                with ThreadPoolExecutor() as pool_:
+                    refreshed = await loop_.run_in_executor(pool_, _discover_server_url_options)
+                if not refreshed:
+                    if not silent:
+                        ui.notify("No reachable Plex server URLs found", type="warning")
+                    return
+
+                selected = url_select.value
+                next_value = selected if selected in refreshed else refreshed[0]
+                url_select.set_options(refreshed, value=next_value)
+                if not silent:
+                    ui.notify("Server URL list refreshed", type="positive")
+
+            def _on_open(_):
+                asyncio.create_task(_refresh_server_urls(silent=True))
+
+            url_select.on("popup-show", _on_open)
+
+            ui.button("Refresh", icon="refresh", on_click=_refresh_server_urls).props("flat color=amber")
         with ui.row().classes("gap-4 w-full"):
             partial_toggle = ui.switch("Enable Partial Library Scans", value=partial_scan == "true").style(
                 f"color: {COLORS['text']}")
@@ -302,7 +396,7 @@ async def _render_plex_settings(app_state):
         ).classes("w-full").props("outlined dark color=amber")
 
         async def save_plex_settings():
-            db.set_setting("Plex server address", url_input.value, "library")
+            db.set_setting("Plex server address", url_select.value or "", "library")
             db.set_setting("Plex library partial scan", "true" if partial_toggle.value else "false", "library")
             db.set_setting("Plex library refresh delay", delay_input.value, "library")
             db.set_setting("Plex auto remove", remove_select.value, "content")

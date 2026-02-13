@@ -15,7 +15,9 @@ from webapp.pages.media_common import (
     format_date_display,
     get_cached_meta_for_library_item,
     get_content_library_item,
+    get_plex_file_paths,
     open_quick_scrape_popup,
+    path_in_plex,
     render_action_icon,
     render_media_skeleton,
     render_settings_button,
@@ -113,17 +115,39 @@ def _get_episode_plex_file_full_path(episode):
     return ""
 
 
-def _scan_local_episode_files(app_state, imdb_id, is_anime=False):
+
+
+
+def _scan_local_episode_files(app_state, imdb_id, is_anime=False, title="", year=None):
     root = (app_state.db.get_setting("Global Media Folder", "") or "").rstrip("/")
     mapping = {}
     if not root or not os.path.isdir(root):
         return mapping
 
     needle = f"imdb-{imdb_id}".lower()
+    title_tokens = [
+        token for token in re.sub(r"[^a-z0-9]+", " ", (title or "").lower()).split()
+        if len(token) >= 3
+    ]
+    year_text = str(year) if year else ""
+
+    def _dir_matches(low_dirpath):
+        if needle and needle in low_dirpath:
+            return True
+        if not title_tokens:
+            return False
+        token_hits = sum(1 for token in title_tokens if token in low_dirpath)
+        min_hits = 1 if len(title_tokens) == 1 else 2
+        if token_hits < min_hits:
+            return False
+        if year_text and year_text not in low_dirpath:
+            return False
+        return True
+
     try:
         for dirpath, _, filenames in os.walk(root):
             low = dirpath.lower()
-            if needle not in low:
+            if not _dir_matches(low):
                 continue
             for filename in filenames:
                 se = TorrentParser.extract_season_episode(filename, is_anime=is_anime)
@@ -144,6 +168,19 @@ def _display_relative_path(app_state, full_path):
         rel = os.path.relpath(full_path, root)
         return f"/{rel}"
     return full_path
+
+
+def _split_display_path(display_path):
+    raw = (display_path or "").strip()
+    if not raw or raw == "N/A":
+        return "N/A", "N/A"
+
+    normalized = raw.replace("\\", "/")
+    filename = os.path.basename(normalized) or "N/A"
+    folder = os.path.dirname(normalized)
+    if folder and not folder.endswith("/"):
+        folder += "/"
+    return folder or "N/A", filename
 
 
 def _collect_downloading_episode_keys(app_state, imdb_id):
@@ -321,7 +358,13 @@ async def render(app_state, client: Client, imdb_id: str):
     is_anime = (library_item.get("media_type") or "") == "anime_show"
 
     local_map = await asyncio.get_event_loop().run_in_executor(
-        None, _scan_local_episode_files, app_state, imdb_id, is_anime
+        None,
+        _scan_local_episode_files,
+        app_state,
+        imdb_id,
+        is_anime,
+        show_title,
+        library_item.get("year"),
     )
     downloading_keys = _collect_downloading_episode_keys(app_state, imdb_id)
 
@@ -331,6 +374,32 @@ async def render(app_state, client: Client, imdb_id: str):
             for episode in getattr(season, "Episodes", []) or []:
                 key = f"S{int(getattr(season, 'index', 0)):02d}E{int(getattr(episode, 'index', 0)):02d}"
                 plex_episode_map[key] = episode
+
+    plex_exact_paths, plex_basenames = await asyncio.get_event_loop().run_in_executor(
+        None, get_plex_file_paths, app_state
+    )
+
+    series_folder_path = "N/A"
+    for key in sorted(plex_episode_map.keys()):
+        full_path = _get_episode_plex_file_full_path(plex_episode_map[key])
+        if not full_path:
+            continue
+        display_path = _display_relative_path(app_state, full_path)
+        folder, _ = _split_display_path(display_path)
+        if folder != "N/A":
+            series_folder_path = folder
+            break
+
+    if series_folder_path == "N/A":
+        for key in sorted(local_map.keys()):
+            full_path = local_map.get(key) or ""
+            if not full_path:
+                continue
+            display_path = _display_relative_path(app_state, full_path)
+            folder, _ = _split_display_path(display_path)
+            if folder != "N/A":
+                series_folder_path = folder
+                break
 
     if cinemeta_seasons:
         seasons = cinemeta_seasons
@@ -369,9 +438,10 @@ async def render(app_state, client: Client, imdb_id: str):
                     f"border-bottom:1px solid {COLORS['surface_light']};font-weight:600"
                 ):
                     ui.label("#").style("width: 10%")
-                    ui.label("Relative path").style("width: 33%")
-                    ui.label("Air date").style("width: 15%")
-                    ui.label("Episode status").style("width: 33%")
+                    ui.label("File name").style("width: 40%")
+                    ui.label("Air date").style("width: 12%")
+                    ui.label("Episode status").style("width: 19%")
+                    ui.label("Plex").style("width: 10%; text-align: center")
                     ui.label("Delete").style("width: 3%; text-align: right")
                     ui.label("Search").style("width: 3%; text-align: right")
                     ui.label("Fetch").style("width: 3%; text-align: right")
@@ -383,7 +453,10 @@ async def render(app_state, client: Client, imdb_id: str):
                     in_plex = se_key in plex_episode_map
                     plex_file_path = _get_episode_plex_file_full_path(plex_episode_map[se_key]) if in_plex else ""
                     local_file_path = local_map.get(se_key, "")
-                    display_name = _display_relative_path(app_state, plex_file_path or local_file_path)
+                    if (not in_plex) and local_file_path:
+                        in_plex = path_in_plex(local_file_path, plex_exact_paths, plex_basenames)
+                    display_path = _display_relative_path(app_state, plex_file_path or local_file_path)
+                    _, file_name = _split_display_path(display_path)
 
                     air_date = episode.get("air_date") or "N/A"
                     released = False
@@ -402,18 +475,22 @@ async def render(app_state, client: Client, imdb_id: str):
                         f"border-bottom:1px solid {COLORS['surface_light']}"
                     ):
                         ui.label(str(ep_num)).style("width: 10%")
-                        ui.label(display_name).style(
-                            f"width: 33%; color:{COLORS['text_muted']}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis"
+                        ui.label(file_name).style(
+                            f"width: 40%; color:{COLORS['text_muted']}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis"
                         )
-                        ui.label(format_date_display(air_date)).style("width: 15%")
+                        ui.label(format_date_display(air_date)).style("width: 12%")
 
-                        with ui.row().classes("items-center gap-1").style("width: 33%"):
+                        with ui.row().classes("items-center gap-1").style("width: 19%"):
                             for text, color in status_badges(
                                 in_plex=in_plex,
                                 in_local_only=in_local_only,
                                 downloading=is_downloading,
                             ):
                                 ui.badge(text, color=color)
+
+                        with ui.row().classes("items-center justify-center").style("width: 10%"):
+                            if in_plex:
+                                ui.icon("check_circle").style(f"color:{COLORS['success']}")
 
                         with ui.row().classes("justify-end").style("width: 3%"):
                             async def _auto_fetch(_, s=season_number, e=ep_num, can=can_fetch):
@@ -493,6 +570,7 @@ async def render(app_state, client: Client, imdb_id: str):
         media_title=show_title,
         poster_url=poster,
         release_date=release_date_display,
+        media_path=series_folder_path,
         description=description,
         background_url=background,
         release_label="",
