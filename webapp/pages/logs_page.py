@@ -1,5 +1,5 @@
 """
-Download/activity logs page for pd_reloaded.
+Download/activity logs page for plex_debrid.
 """
 
 import logging

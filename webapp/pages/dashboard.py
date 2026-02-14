@@ -1,5 +1,5 @@
 """
-Dashboard page for pd_reloaded.
+Dashboard page for plex_debrid.
 Shows overview stats, automation controls, and recent activity.
 """
 
@@ -72,7 +72,7 @@ async def render(app_state, client: Client):
     engine = get_automation_engine(app_state)
 
     with ui.column().classes("p-6 gap-6 w-full"):
-        page_header("Dashboard", "Overview of your pd_reloaded instance")
+        page_header("Dashboard", "Overview of your plex_debrid instance")
 
         # ─── Automation Controls ─────────────────────────────
         with ui.card().classes("w-full p-4"):

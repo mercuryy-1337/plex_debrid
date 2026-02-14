@@ -397,7 +397,7 @@ FodyWeavers.xsd
 # JetBrains Rider
 *.sln.iml
 
-# pd_reloaded - sensitive / runtime data / venv
+# plex_debrid - sensitive / runtime data / venv
 *.db
 *.db-journal
 *.db-wal

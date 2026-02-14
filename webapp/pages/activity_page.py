@@ -1,5 +1,5 @@
 """
-Activity page for pd_reloaded.
+Activity page for plex_debrid.
 
 Shows a live table of incoming torrents:
 sent → downloading → downloaded → processing → completed.

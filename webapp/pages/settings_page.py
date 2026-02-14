@@ -1,5 +1,5 @@
 """
-Settings page for pd_reloaded.
+Settings page for plex_debrid.
 Full settings management via web UI.
 """
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 async def render(app_state, client: Client):
 
     with ui.column().classes("p-6 gap-6 w-full"):
-        page_header("Settings", "Configure all aspects of pd_reloaded")
+        page_header("Settings", "Configure all aspects of plex_debrid")
 
         # ─── Settings Tabs ──────────────────────────────────
         with ui.tabs().classes("w-full").props("dense active-color=amber indicator-color=amber") as tabs:
@@ -412,7 +412,7 @@ async def _render_content_settings(app_state):
     # Active content services
     with ui.card().classes("w-full p-4"):
         ui.label("Content Services").classes("text-lg font-semibold").style(f"color: {COLORS['text']}")
-        ui.label("Services that pd_reloaded monitors for new content. Enable a service to configure it.").classes(
+        ui.label("Services that plex_debrid monitors for new content. Enable a service to configure it.").classes(
             "text-sm").style(f"color: {COLORS['text_muted']}")
         ui.separator().classes("my-2")
 
@@ -1456,7 +1456,7 @@ async def _render_advanced_settings(app_state):
             label="Log Level",
         ).classes("w-full").props("outlined dark color=amber")
 
-        log_toggle = ui.switch("Log to File (pd_reloaded.log)", value=log_file == "true").style(f"color: {COLORS['text']}")
+        log_toggle = ui.switch("Log to File (plex_debrid.log)", value=log_file == "true").style(f"color: {COLORS['text']}")
         ui.label(
             "When enabled a rotating log file is written to the config directory. "
             "Max 5 MB per file, 3 backups kept."

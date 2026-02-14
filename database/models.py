@@ -1,5 +1,5 @@
 """
-SQLAlchemy models for pd_reloaded.
+SQLAlchemy models for plex_debrid.
 """
 
 import os
@@ -18,7 +18,13 @@ _session_factory = None
 
 
 def get_db_path(config_dir="."):
-    return os.path.join(config_dir, "pd_reloaded.db")
+    new_path = os.path.join(config_dir, "plex_debrid.db")
+    legacy_path = os.path.join(config_dir, "pd_reloaded.db")
+    if os.path.exists(new_path):
+        return new_path
+    if os.path.exists(legacy_path):
+        return legacy_path
+    return new_path
 
 
 def get_engine(config_dir="."):

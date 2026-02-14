@@ -1,5 +1,5 @@
 """
-Onboarding page for pd_reloaded.
+Onboarding page for plex_debrid.
 Multi-step wizard for first-time setup.
 """
 
@@ -94,7 +94,7 @@ async def render(app_state, client: Client):
         # Logo and title
         with ui.column().classes("items-center gap-2 mb-8"):
             ui.label("🎬").classes("text-5xl")
-            ui.label("pd_reloaded").classes("text-3xl font-bold").style(f"color: {COLORS['primary']}")
+            ui.label("plex_debrid").classes("text-3xl font-bold").style(f"color: {COLORS['primary']}")
             ui.label("Setup Wizard").classes("text-lg").style(f"color: {COLORS['text_muted']}")
 
         # Progress bar
@@ -183,9 +183,9 @@ async def render(app_state, client: Client):
 
 def render_welcome(wizard):
     with ui.card().classes("onboarding-step w-full"):
-        ui.label("Welcome to pd_reloaded").classes("text-2xl font-bold").style(f"color: {COLORS['text']}")
+        ui.label("Welcome to plex_debrid").classes("text-2xl font-bold").style(f"color: {COLORS['text']}")
         ui.label(
-            "This wizard will guide you through setting up pd_reloaded. "
+            "This wizard will guide you through setting up plex_debrid. "
             "You'll connect your Plex account, configure a debrid service, "
             "and choose your scraping sources."
         ).classes("text-sm mt-2").style(f"color: {COLORS['text_muted']}")
@@ -819,7 +819,7 @@ def render_complete(wizard, app_state):
             ui.icon("check_circle").classes("text-6xl").style(f"color: {COLORS['success']}")
             ui.label("Setup Complete!").classes("text-2xl font-bold").style(f"color: {COLORS['text']}")
             ui.label(
-                "pd_reloaded is ready to use. You can start the automation, "
+                "plex_debrid is ready to use. You can start the automation, "
                 "browse your content, or configure additional settings."
             ).classes("text-center text-sm").style(f"color: {COLORS['text_muted']}")
 

@@ -1,5 +1,5 @@
 """
-Search results page for pd_reloaded.
+Search results page for plex_debrid.
 
 Displays cinemeta search results grouped by Movies and Series.
 Allows the user to select a title and proceed to manual scraping / download.

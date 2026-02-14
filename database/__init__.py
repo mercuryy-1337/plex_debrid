@@ -1,5 +1,5 @@
 """
-Database module for pd_reloaded.
+Database module for plex_debrid.
 Uses SQLite via SQLAlchemy for lightweight persistent storage.
 """
 

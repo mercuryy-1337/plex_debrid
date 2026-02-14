@@ -1,5 +1,5 @@
 """
-Application state management for pd_reloaded.
+Application state management for plex_debrid.
 """
 
 import asyncio

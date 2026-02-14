@@ -1,10 +1,10 @@
-# pd_reloaded
+# plex_debrid
 
 > **Branch: `revamp`** — This is a work-in-progress rewrite. Expect breaking changes.
 
 A ground-up modernisation of [plex_debrid](https://github.com/itsToggle/plex_debrid). Plex torrent streaming through Debrid Services, powered by [Decypharr](https://github.com/sirrobot01/decypharr), with a modern web UI.
 
-pd_reloaded replaces the legacy CLI with a full NiceGUI web frontend, SQLite database, Decypharr-only debrid pipeline, and guided onboarding — while preserving the core automation that made plex_debrid great.
+plex_debrid replaces the legacy CLI with a full NiceGUI web frontend, SQLite database, Decypharr-only debrid pipeline, and guided onboarding — while preserving the core automation that made plex_debrid great.
 
 ---
 
@@ -83,8 +83,8 @@ pd_reloaded replaces the legacy CLI with a full NiceGUI web frontend, SQLite dat
 ```yaml
 version: '3.8'
 services:
-  pd_reloaded:
-    container_name: pd_reloaded
+  plex_debrid:
+    container_name: plex_debrid
     build: .
     ports:
       - "8008:8008"
@@ -103,8 +103,8 @@ Open **http://localhost:8008** — the onboarding wizard will guide you through 
 ### Manual
 
 ```bash
-git clone -b revamp https://github.com/mercuryy-1337/pd_reloaded.git
-cd pd_reloaded
+git clone -b revamp https://github.com/mercuryy-1337/plex_debrid.git
+cd plex_debrid
 pip install -r requirements.txt
 python main.py
 ```
@@ -139,7 +139,7 @@ All configuration is done through the web UI at **http://localhost:8008**:
 Plex Watchlist / Trakt / Overseerr
         │
         ▼
-   pd_reloaded (automation engine)
+   plex_debrid (automation engine)
         │
         ├── Scrape: Torrentio / Jackett / Prowlarr / ...
         │

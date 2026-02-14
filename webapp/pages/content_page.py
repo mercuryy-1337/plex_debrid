@@ -1,5 +1,5 @@
 """
-Content page for pd_reloaded.
+Content page for plex_debrid.
 View all content categorized into shows, movies, and anime.
 """
 

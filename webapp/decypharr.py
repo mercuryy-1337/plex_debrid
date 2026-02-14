@@ -1,5 +1,5 @@
 """
-Decypharr qBittorrent-compatible client for pd_reloaded.
+Decypharr qBittorrent-compatible client for plex_debrid.
 
 Decypharr exposes a qBittorrent WebAPI-compatible interface. This module
 mimics how Sonarr/Radarr interact with a qBittorrent download client:

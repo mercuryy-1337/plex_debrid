@@ -1,5 +1,5 @@
 """
-pd_reloaded - Modern web-based debrid media manager.
+plex_debrid - Modern web-based debrid media manager.
 
 Supports two modes:
   1. Web UI mode (default): Launches NiceGUI web interface on port 8008
@@ -20,7 +20,7 @@ import argparse
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="pd_reloaded - Debrid media manager")
+    parser = argparse.ArgumentParser(description="plex_debrid - Debrid media manager")
     parser.add_argument(
         "--config-dir",
         default=None,
@@ -112,11 +112,11 @@ if __name__ == "__main__":
     args = parse_args()
     config_dir = detect_config_dir(args.config_dir)
 
-    print(f"[pd_reloaded] Config directory: {config_dir}")
+    print(f"[plex_debrid] Config directory: {config_dir}")
 
     if args.legacy:
-        print("[pd_reloaded] Starting in legacy CLI mode...")
+        print("[plex_debrid] Starting in legacy CLI mode...")
         run_legacy(config_dir, args.service)
     else:
-        print(f"[pd_reloaded] Starting web UI on {args.host}:{args.port}...")
+        print(f"[plex_debrid] Starting web UI on {args.host}:{args.port}...")
         run_webapp(config_dir, host=args.host, port=args.port)

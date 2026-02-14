@@ -1,5 +1,5 @@
 """
-Automation engine for pd_reloaded.
+Automation engine for plex_debrid.
 Bridges the legacy download automation with the new web UI.
 """
 

@@ -1,5 +1,5 @@
 """
-Intelligent local full-text search for pd_reloaded.
+Intelligent local full-text search for plex_debrid.
 
 A pure-Python port of Stremio's local-search algorithm
 (https://github.com/Stremio/local-search, MIT licence).

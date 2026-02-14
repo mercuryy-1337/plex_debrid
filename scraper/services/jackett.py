@@ -83,7 +83,7 @@ def scrape(query, altquery):
             result.Title = result.Title.replace(' ', '.')
             result.Title = result.Title.replace(':', '').replace("'", '')
             result.Title = regex.sub(r'\.+', ".", result.Title)
-            if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', result.Title,regex.I):
+            if regex.match(r'(' + altquery.replace('.', r'\\.').replace(r'\.*', ".*") + ')', result.Title,regex.I):
                 if not result.MagnetUri == None:
                     if not result.Tracker == None and not result.Size == None:
                         scraped_releases += [

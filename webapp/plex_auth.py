@@ -1,5 +1,5 @@
 """
-Plex OAuth browser authentication for pd_reloaded.
+Plex OAuth browser authentication for plex_debrid.
 Replaces manual token entry with proper browser-based auth flow.
 """
 
@@ -23,7 +23,7 @@ PLEX_USER_URL = "https://plex.tv/api/v2/user"
 
 PLEX_HEADERS = {
     "Accept": "application/json",
-    "X-Plex-Product": "pd_reloaded",
+    "X-Plex-Product": "plex_debrid",
     "X-Plex-Version": "3.1.0",
     "X-Plex-Platform": "Web",
 }
@@ -40,7 +40,7 @@ def create_pin(client_id):
     Returns (pin_id, pin_code, auth_url).
     """
     headers = {**PLEX_HEADERS, "X-Plex-Client-Identifier": client_id}
-    data = {"strong": "true", "X-Plex-Product": "pd_reloaded", "X-Plex-Client-Identifier": client_id}
+    data = {"strong": "true", "X-Plex-Product": "plex_debrid", "X-Plex-Client-Identifier": client_id}
 
     try:
         response = requests.post(PLEX_PIN_URL, headers=headers, data=data, timeout=10)
@@ -53,7 +53,7 @@ def create_pin(client_id):
         auth_url = (
             f"{PLEX_AUTH_URL}?clientID={client_id}"
             f"&code={pin_code}"
-            f"&context%5Bdevice%5D%5Bproduct%5D=pd_reloaded"
+            f"&context%5Bdevice%5D%5Bproduct%5D=plex_debrid"
         )
 
         return pin_id, pin_code, auth_url

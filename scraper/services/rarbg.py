@@ -54,7 +54,7 @@ def scrape(query, altquery):
             time.sleep(1 + random.randint(0, 2))
         if hasattr(response, "torrent_results"):
             for result in response.torrent_results:
-                if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', result.title,
+                if regex.match(r'(' + altquery.replace('.', r'\.').replace(r'\.*', ".*") + ')', result.title,
                                 regex.I):
                     release = releases.release('[rarbg]', 'torrent', result.title, [], float(result.size) / 1000000000,
                                         [result.download], seeders=result.seeders)

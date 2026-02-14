@@ -470,6 +470,8 @@ async def render(app_state, client: Client, imdb_id: str):
 
                     in_local_only = (not in_plex) and bool(local_file_path)
                     is_downloading = se_key in downloading_keys
+                    is_missing = (not in_plex) and (not in_local_only) and (not is_downloading)
+                    not_yet_aired = is_missing and (air_date != "N/A") and (not released)
 
                     with ui.row().classes("w-full items-center no-wrap px-2 py-2").style(
                         f"border-bottom:1px solid {COLORS['surface_light']}"
@@ -485,6 +487,7 @@ async def render(app_state, client: Client, imdb_id: str):
                                 in_plex=in_plex,
                                 in_local_only=in_local_only,
                                 downloading=is_downloading,
+                                not_yet_aired=not_yet_aired,
                             ):
                                 ui.badge(text, color=color)
 

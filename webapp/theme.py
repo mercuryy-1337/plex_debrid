@@ -1,5 +1,5 @@
 """
-Theme and styling for pd_reloaded NiceGUI frontend.
+Theme and styling for plex_debrid NiceGUI frontend.
 """
 
 from nicegui import ui
@@ -259,7 +259,7 @@ CSS = """
 
 
 def apply_theme():
-    """Apply the pd_reloaded theme to the page."""
+    """Apply the plex_debrid theme to the page."""
     ui.add_head_html(CSS)
     ui.add_head_html(
         '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">'

@@ -14,7 +14,7 @@ client_id = ""
 PLEX_DISCOVER = 'https://discover.provider.plex.tv'
 headers = {
     'Accept': 'application/json',
-    'X-Plex-Product': 'pd_reloaded',
+    'X-Plex-Product': 'plex_debrid',
     'X-Plex-Version': '3.6',
     'X-Plex-Platform': 'Web',
 }

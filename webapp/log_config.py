@@ -1,5 +1,5 @@
 """
-Centralised logging configuration for pd_reloaded.
+Centralised logging configuration for plex_debrid.
 
 Log levels
 ──────────
@@ -105,6 +105,16 @@ _buffer_handler: _BufferHandler | None = None
 _display_level_filter = _DisplayLevelFilter()
 
 
+def _resolve_log_path(config_dir: str) -> str:
+    new_path = os.path.join(config_dir, "plex_debrid.log")
+    legacy_path = os.path.join(config_dir, "pd_reloaded.log")
+    if os.path.exists(new_path):
+        return new_path
+    if os.path.exists(legacy_path):
+        return legacy_path
+    return new_path
+
+
 def setup_logging(log_level: str = "info",
                   log_to_file: bool = False,
                   config_dir: str = "."):
@@ -113,7 +123,8 @@ def setup_logging(log_level: str = "info",
 
     *log_level*  – ``"info"`` | ``"debug"`` | ``"trace"``
     *log_to_file* – whether to write a rotating log file
-    *config_dir* – directory where ``pd_reloaded.log`` will be created
+    *config_dir* – directory where ``plex_debrid.log`` will be created
+                   (or existing ``pd_reloaded.log`` will be reused)
     """
     global _file_handler, _buffer_handler
 
@@ -146,11 +157,17 @@ def setup_logging(log_level: str = "info",
 
     # ── File handler ────────────────────────────────────────────────
     if log_to_file:
-        log_path = os.path.join(config_dir, "pd_reloaded.log")
-        if _file_handler is None or not isinstance(_file_handler, logging.handlers.RotatingFileHandler):
+        log_path = _resolve_log_path(config_dir)
+        current_file = getattr(_file_handler, "baseFilename", "") if _file_handler else ""
+        if (
+            _file_handler is None
+            or not isinstance(_file_handler, logging.handlers.RotatingFileHandler)
+            or os.path.abspath(current_file) != os.path.abspath(log_path)
+        ):
             # Remove old one if type changed
             if _file_handler is not None:
                 root.removeHandler(_file_handler)
+                _file_handler.close()
             _file_handler = logging.handlers.RotatingFileHandler(
                 log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8",
             )

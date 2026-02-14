@@ -1,5 +1,5 @@
 """
-Shared layout components for pd_reloaded web UI.
+Shared layout components for plex_debrid web UI.
 """
 
 from nicegui import ui
@@ -24,7 +24,7 @@ def create_layout(app_state, active_page="dashboard"):
     with ui.header().classes("items-center justify-between px-6 py-2"):
         with ui.row().classes("items-center gap-2"):
             ui.label("🎬").classes("text-xl")
-            ui.label("pd_reloaded").classes("text-lg font-bold").style(f"color: {COLORS['primary']}")
+            ui.label("plex_debrid").classes("text-lg font-bold").style(f"color: {COLORS['primary']}")
             ui.label(f"v{app_version}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
     with ui.left_drawer(value=True, fixed=True).classes("flex flex-col").style(
@@ -110,7 +110,7 @@ def create_spa_shell(app_state, initial_page, on_navigate, client=None):
     with ui.header().classes("items-center justify-between px-6 py-2"):
         with ui.row().classes("items-center gap-2"):
             ui.label("🎬").classes("text-xl")
-            ui.label("pd_reloaded").classes("text-lg font-bold").style(f"color: {COLORS['primary']}")
+            ui.label("plex_debrid").classes("text-lg font-bold").style(f"color: {COLORS['primary']}")
             ui.label(f"v{app_version}").classes("text-xs").style(f"color: {COLORS['text_muted']}")
 
         # ── Search bar ──────────────────────────────────────────────

@@ -1,5 +1,5 @@
 """
-Database manager for pd_reloaded.
+Database manager for plex_debrid.
 Provides high-level CRUD operations and settings migration from legacy JSON.
 """
 
@@ -12,7 +12,7 @@ import re
 from contextlib import contextmanager
 
 from database.models import (
-    init_db, get_session, get_engine, Base,
+    init_db, get_session, get_engine, get_db_path, Base,
     Setting, ContentItem, DownloadLog, IgnoredItem, PlexUser, TraktUser,
     DebridService, ScraperSource, ReleaseVersion, ReleaseRule, TrackerRule
 )
@@ -46,7 +46,7 @@ class DatabaseManager:
 
     def is_setup_complete(self):
         """Check if the app has been set up (DB exists and has required settings)."""
-        db_path = os.path.join(self.config_dir, "pd_reloaded.db")
+        db_path = get_db_path(self.config_dir)
         if not os.path.exists(db_path):
             return False
         try:

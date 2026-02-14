@@ -1,7 +1,7 @@
 version: '3.8'
 services:
-  pd_reloaded:
-    container_name: pd_reloaded
+  plex_debrid:
+    container_name: plex_debrid
     build: .
     environment:
       - PGID=1000

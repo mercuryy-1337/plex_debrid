@@ -1,5 +1,5 @@
 """
-Cinemeta feed cache for pd_reloaded.
+Cinemeta feed cache for plex_debrid.
 
 Fetches https://cinemeta-catalogs.strem.io/feed.json and caches it
 in memory with a 12-hour TTL.  Used by the search bar to provide

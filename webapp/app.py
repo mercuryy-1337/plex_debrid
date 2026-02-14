@@ -1,5 +1,5 @@
 """
-Main NiceGUI web application for pd_reloaded.
+Main NiceGUI web application for plex_debrid.
 
 Uses a single-page-application shell: header and sidebar are rendered once,
 only the content area is swapped when navigating between pages.
@@ -191,11 +191,11 @@ def create_app(config_dir="."):
         shell_page = page
         if page.startswith("series/"):
             series_imdb = page.split("/", 1)[1]
-            shell_page = "content"
+            shell_page = "series"
             page = "series"
         elif page.startswith("movies/"):
             movie_imdb = page.split("/", 1)[1]
-            shell_page = "content"
+            shell_page = "movies"
             page = "movies"
 
         pages = _get_page_modules()
@@ -206,7 +206,6 @@ def create_app(config_dir="."):
         from webapp.components import create_spa_shell
 
         def _deactivate_child_timers(element):
-            """Recursively deactivate Timer elements to prevent 'parent slot deleted' errors."""
             from nicegui.elements.timer import Timer as _Timer
             for slot in element.slots.values():
                 for child in slot.children:
@@ -215,22 +214,24 @@ def create_app(config_dir="."):
                     _deactivate_child_timers(child)
 
         async def navigate(page_name: str):
-            """Swap only the content area — sidebar stays put."""
             _deactivate_child_timers(content_area)
             content_area.clear()
-            # Support "results:query" for search navigation
             search_query = ""
             series_target = ""
             movie_target = ""
+            nav_shell_page = page_name
             if page_name.startswith("results:"):
                 search_query = page_name.split(":", 1)[1]
                 page_name = "results"
+                nav_shell_page = "dashboard"
             elif page_name.startswith("series/"):
                 series_target = page_name.split("/", 1)[1]
                 page_name = "series"
+                nav_shell_page = "series"
             elif page_name.startswith("movies/"):
                 movie_target = page_name.split("/", 1)[1]
                 page_name = "movies"
+                nav_shell_page = "movies"
             mod = pages.get(page_name)
             if mod:
                 with content_area:
@@ -255,10 +256,8 @@ def create_app(config_dir="."):
 
         content_area = create_spa_shell(app_state, shell_page, navigate, client)
 
-        # Render initial page
         with content_area:
             if page == "results":
-                # Extract query from ?q= parameter if present
                 from starlette.requests import Request as _Req
                 raw_q = client.request.query_params.get("q", "") if hasattr(client, "request") else ""
                 await pages[page].render(app_state, client, search_query=raw_q)
@@ -275,7 +274,7 @@ def create_app(config_dir="."):
 def run_app(config_dir=".", host="0.0.0.0", port=8008):
     """Run the NiceGUI application."""
     ui.run(
-        title="pd_reloaded",
+        title="plex_debrid",
         host=host,
         port=port,
         reload=False,

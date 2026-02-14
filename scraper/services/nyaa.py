@@ -93,7 +93,7 @@ def scrape(query, altquery):
                         title = torrent['name'].strip()
                         title = title.replace(" ", '.')
                         title = regex.sub(r'\.+', ".", title)
-                        if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', title,regex.I):
+                        if regex.match(r'(' + altquery.replace('.', r'\\.').replace(r'\.*', ".*") + ')', title,regex.I):
                             download = torrent['magnet']
                             size = torrent['size']
                             seeders = torrent['seeders']

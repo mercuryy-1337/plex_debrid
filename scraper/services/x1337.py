@@ -29,7 +29,7 @@ def scrape(query, altquery):
                     title = torrent.getText().strip()
                     title = title.replace(" ", '.')
                     title = regex.sub(r'\.+', ".", title)
-                    if regex.match(r'(' + altquery.replace('.', '\.').replace("\.*", ".*") + ')', title,
+                    if regex.match(r'(' + altquery.replace('.', r'\.').replace(r'\.*', ".*") + ')', title,
                                     regex.I):
                         link = torrent['href']
                         response = session.get('http://1337x.to' + link, headers=headers)

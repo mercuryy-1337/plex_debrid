@@ -209,9 +209,11 @@ async def get_cached_meta_for_library_item(app_state, *, imdb_id, kind):
     return fresh
 
 
-def status_badges(*, in_plex, in_local_only, downloading):
+def status_badges(*, in_plex, in_local_only, downloading, not_yet_aired=False):
     if in_plex or in_local_only:
         return [("On Disk", "green")]
+    if not_yet_aired:
+        return [("Not yet aired", "grey")]
     return [("Missing", "red")]
 
 
